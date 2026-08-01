@@ -124,7 +124,7 @@ namespace PluginDocumenter.Logic
                 ColumnSet = new ColumnSet(
                     "sdkmessageprocessingstepid", "name", "stage", "mode", "rank",
                     "filteringattributes", "configuration", "description",
-                    "asyncautodelete", "plugintypeid", "sdkmessageid", "sdkmessagefilterid"),
+                    "asyncautodelete", "statecode", "plugintypeid", "sdkmessageid", "sdkmessagefilterid"),
                 Criteria =
                 {
                     Conditions =
@@ -145,8 +145,15 @@ namespace PluginDocumenter.Logic
                 EntityAlias = "flt",
                 Columns = new ColumnSet("primaryobjecttypecode")
             };
+            // "Run in User's Context". Null means the calling user, which is the default.
+            var impersonated = new LinkEntity("sdkmessageprocessingstep", "systemuser", "impersonatinguserid", "systemuserid", JoinOperator.LeftOuter)
+            {
+                EntityAlias = "usr",
+                Columns = new ColumnSet("fullname")
+            };
             query.LinkEntities.Add(message);
             query.LinkEntities.Add(filter);
+            query.LinkEntities.Add(impersonated);
 
             return service.RetrieveMultiple(query).Entities
                 .Select(e => new KeyValuePair<PluginStepInfo, Guid>(
@@ -161,8 +168,10 @@ namespace PluginDocumenter.Logic
                         Configuration = e.GetAttributeValue<string>("configuration"),
                         Description = e.GetAttributeValue<string>("description"),
                         AsyncAutoDelete = e.GetAttributeValue<bool?>("asyncautodelete") ?? false,
+                        IsDisabled = GetOptionSet(e, "statecode", 0) == 1,
                         MessageName = GetAliased<string>(e, "msg.name"),
-                        PrimaryEntityName = GetAliased<string>(e, "flt.primaryobjecttypecode")
+                        PrimaryEntityName = GetAliased<string>(e, "flt.primaryobjecttypecode"),
+                        ImpersonatingUser = GetAliased<string>(e, "usr.fullname")
                     },
                     e.GetAttributeValue<EntityReference>("plugintypeid").Id))
                 .ToList();

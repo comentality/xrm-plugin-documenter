@@ -53,6 +53,10 @@ namespace PluginDocumenter.Logic
         public string Description;
         public string Configuration;
         public bool AsyncAutoDelete;
+        /// <summary>statecode 1. Documented in the comment only; no attribute can carry it.</summary>
+        public bool IsDisabled;
+        /// <summary>Full name behind impersonatinguserid, empty when the step runs as the calling user.</summary>
+        public string ImpersonatingUser;
         public List<PluginImageInfo> Images = new List<PluginImageInfo>();
     }
 
