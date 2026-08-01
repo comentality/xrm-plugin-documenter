@@ -21,16 +21,23 @@ against the modern attribute model.
 
 1. **Load Assemblies** lists the custom plugin assemblies in the connected environment.
 2. Selecting one loads every plugin type that has at least one registered step.
-3. **Preview Attributes** shows exactly what would be written.
-4. **Write to Files** finds the `.cs` file declaring each class and splices the
-   attributes in above the class declaration.
-5. **Create Attribute Definitions File** drops a dependency-free
+3. **Write** chooses the output: *Xrm Tools attributes* or a *readable summary comment*.
+4. **Preview** shows exactly what would be written.
+5. **Write to Files** finds the `.cs` file declaring each class and splices the output
+   in above the class declaration.
+6. **Create Attribute Definitions File** drops a dependency-free
    `XrmToolsMetaAttributes.cs` into your project so the emitted attributes compile
    without the NuGet package or the Visual Studio extension.
 
 Every file that changes gets a timestamped `.bak` copy beside it.
 
 ## Output
+
+Two shapes, chosen with the **Write** toggle. They are independent: each replaces only
+its own block, so switching modes never deletes the other one's work, and a class can
+carry both.
+
+### Xrm Tools attributes
 
 ```csharp
 /// <summary>Handles account writes.</summary>
@@ -54,6 +61,41 @@ line only when the line gets long.
 
 **Attribute order is load bearing.** `[Image]` binds to the nearest preceding `[Step]`,
 so steps are written in execution order with their own images following them.
+
+### Readable summary comment
+
+The same registration as prose, for the reader rather than the compiler:
+
+```csharp
+/// <summary>Handles course history.</summary>
+/// <remarks>
+/// Register:
+/// Sync Pre-Delete of ilac_class (order 1, disabled, As SYSTEM)
+///     PreImage: (all columns)
+/// Sync Post-Create of mshied_coursehistory (order 3): ilac_suggestedesllevel
+///     PreImage:
+///         mshied_academicperioddetailsid, ilac_class, mshied_courseid, ilac_currentlevel,
+///         ilac_enddate, ilac_exitlevel, ilac_isstudentleaving, ilac_sessiontype
+/// Sync Post-Update of mshied_coursehistory (order 1):
+///     ilac_enddate, mshied_enrollmentstatus, ilac_startdate, ilac_suggestedesllevel
+/// </remarks>
+public partial class CourseHistoryHandler : IPlugin
+```
+
+Deliberately not a second serialisation. Step names, descriptions and configuration are
+left out as noise; the unlabelled list after the colon is the step's filtering attributes,
+which [Dataverse now honours on `Create` as well as
+`Update`](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in).
+
+Because nothing has to compile, the comment can carry two facts no attribute can express:
+a **disabled** step, and the user a step impersonates (PRT's *Run in User's Context*),
+shown as `As <name>`. Both appear only when they differ from the default. An image with no
+columns is reported as `(all columns)`, which Microsoft
+[explicitly calls out as bad practice](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in)
+rather than a neutral default.
+
+The tool owns a `<remarks>` block whose first line is `Register:` and replaces it in
+place on later runs. Any other `<remarks>` you have written is left alone.
 
 ## Attribute definitions file
 
@@ -79,12 +121,17 @@ These come from the Xrm Tools attribute model, not from this tool.
 
 - **Isolation mode is assembly-level.** `[assembly: PluginAssembly(IsolationMode = ...)]`
   has no per-step equivalent, unlike spkl.
-- **Step state is not documented.** A registered plugin is a registered plugin, so steps
-  are written whether or not they are active.
+- **Step state is not documented in attribute mode.** A registered plugin is a registered
+  plugin, so steps are written whether or not they are active. The summary comment does
+  mark disabled steps, because a comment has no such constraint.
 - **`StepAttribute.State` and `StepAttribute.SupportedDeployment` can never be emitted.**
   They are declared as nullable enums upstream, which C# rejects as attribute named
   arguments (`CS0655`, reproduced against v1.0.57). The generated definitions file
   mirrors the defect deliberately rather than diverging from the package.
+- **Impersonation is only in the summary comment.** `StepAttribute` carries it as
+  `ImpersonatingUserFullname`, a plain string that resolves by name, so a step could point
+  at a different user in a different environment. The comment states it as a fact instead
+  of trying to redeploy it.
 - **Classes are matched by name.** A class declared in more than one file under the
   selected folder is reported as ambiguous and skipped rather than guessed at.
 
