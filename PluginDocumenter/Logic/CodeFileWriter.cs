@@ -27,6 +27,17 @@ namespace PluginDocumenter.Logic
             @"^\s*\[\s*(Plugin|Step|Image)(Attribute)?\s*[\(\]]",
             RegexOptions.Compiled);
 
+        /// <summary>
+        /// A doc comment this tool owns: a remarks block at the very end of the text whose
+        /// first line is the emitter's marker. Any other remarks block is the user's.
+        /// </summary>
+        private static readonly Regex TrailingRemarks = new Regex(
+            @"(?m)^[ \t]*///[ \t]*<remarks>[ \t]*\r?\n"
+            + @"[ \t]*///[ \t]*" + Regex.Escape(RemarksEmitter.Marker) + @"[ \t]*\r?\n"
+            + @"(?:[ \t]*///.*\r?\n)*?"
+            + @"[ \t]*///[ \t]*</remarks>[ \t]*\r?\n?\z",
+            RegexOptions.Compiled);
+
         public static Regex ClassDeclaration(string className)
         {
             return new Regex(
@@ -93,10 +104,14 @@ namespace PluginDocumenter.Logic
         }
 
         /// <summary>
-        /// Replaces this tool's attributes above the class declaration with
-        /// <paramref name="attributes"/>, leaving any other attributes in place.
+        /// Replaces this tool's own output above the class declaration, leaving anything
+        /// else in place.
+        ///
+        /// The two outputs are independent: pass null for either to leave whatever is
+        /// already in the file untouched, so switching output mode never silently deletes
+        /// the other mode's work.
         /// </summary>
-        public static string Splice(string code, string className, IEnumerable<string> attributes)
+        public static string Splice(string code, string className, IEnumerable<string> remarks, IEnumerable<string> attributes)
         {
             var match = ClassDeclaration(className).Match(code);
             if (!match.Success)
@@ -111,7 +126,9 @@ namespace PluginDocumenter.Logic
             var head = code.Substring(0, lineStart);
             var tail = code.Substring(lineStart);
 
-            // Peel every attribute directly above the class, keeping the ones we do not own.
+            // Peel every attribute directly above the class. This happens even when we are
+            // not writing attributes, because our remarks block sits above them and cannot
+            // be found otherwise; in that case they are all put back untouched.
             var kept = new List<string>();
             while (true)
             {
@@ -121,7 +138,7 @@ namespace PluginDocumenter.Logic
                     break;
                 }
 
-                if (!OwnedAttribute.IsMatch(attribute.Value))
+                if (attributes == null || !OwnedAttribute.IsMatch(attribute.Value))
                 {
                     kept.Insert(0, attribute.Value);
                 }
@@ -129,18 +146,40 @@ namespace PluginDocumenter.Logic
                 head = head.Substring(0, attribute.Index);
             }
 
+            // Our remarks block sits above the attributes, so that it stays contiguous with
+            // any hand written summary and the two read as one doc comment.
+            if (remarks != null)
+            {
+                var existing = TrailingRemarks.Match(head);
+                if (existing.Success)
+                {
+                    head = head.Substring(0, existing.Index);
+                }
+            }
+
             var newline = code.IndexOf("\r\n", StringComparison.Ordinal) >= 0 ? "\r\n" : "\n";
             var sb = new StringBuilder(head);
+            if (remarks != null)
+            {
+                foreach (var line in remarks)
+                {
+                    sb.Append(indent).Append(line).Append(newline);
+                }
+            }
+
             foreach (var attribute in kept)
             {
                 sb.Append(attribute);
             }
 
-            foreach (var attribute in attributes)
+            if (attributes != null)
             {
-                // Re-indent continuation lines of multi-line attributes to match the class.
-                var text = attribute.Replace("\r\n", "\n").Replace("\n", newline + indent);
-                sb.Append(indent).Append(text).Append(newline);
+                foreach (var attribute in attributes)
+                {
+                    // Re-indent continuation lines of multi-line attributes to match the class.
+                    var text = attribute.Replace("\r\n", "\n").Replace("\n", newline + indent);
+                    sb.Append(indent).Append(text).Append(newline);
+                }
             }
 
             return sb.Append(tail).ToString();
@@ -150,11 +189,11 @@ namespace PluginDocumenter.Logic
         /// Writes the spliced file, leaving a timestamped .bak copy beside it.
         /// Returns false when the file already had exactly these attributes.
         /// </summary>
-        public static bool Update(string filePath, string className, IEnumerable<string> attributes)
+        public static bool Update(string filePath, string className, IEnumerable<string> remarks, IEnumerable<string> attributes)
         {
             var encoding = DetectEncoding(filePath);
             var original = File.ReadAllText(filePath);
-            var updated = Splice(original, className, attributes);
+            var updated = Splice(original, className, remarks, attributes);
 
             if (string.Equals(original, updated, StringComparison.Ordinal))
             {

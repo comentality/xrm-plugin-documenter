@@ -27,6 +27,8 @@ namespace PluginDocumenter
         private Panel _toolbar;
         private TextBox _txtFolder;
         private Button _btnBrowse;
+        private RadioButton _rbAttributes;
+        private RadioButton _rbComment;
         private Button _btnPreview;
         private Button _btnWrite;
         private Button _btnCreateDefinitions;
@@ -95,7 +97,7 @@ namespace PluginDocumenter
             _mainSplit.Panel1.Controls.Add(_leftSplit);
 
             // ===== RIGHT: toolbar + preview =====
-            _toolbar = new Panel { Dock = DockStyle.Top, Height = 70, Padding = new Padding(5) };
+            _toolbar = new Panel { Dock = DockStyle.Top, Height = 98, Padding = new Padding(5) };
 
             var lblFolder = new Label { Text = "Source folder:", Location = new Point(5, 10), AutoSize = true };
             _txtFolder = new TextBox { Location = new Point(95, 7), Width = 400 };
@@ -103,16 +105,34 @@ namespace PluginDocumenter
             _btnBrowse = new Button { Text = "Browse...", Location = new Point(500, 5), Width = 80, Height = 24 };
             _btnBrowse.Click += BtnBrowse_Click;
 
-            _btnPreview = new Button { Text = "Preview Attributes", Location = new Point(5, 36), Width = 130, Height = 26, Enabled = false };
+            var lblOutput = new Label { Text = "Write:", Location = new Point(5, 40), AutoSize = true };
+            _rbAttributes = new RadioButton
+            {
+                Text = "Xrm Tools attributes",
+                Location = new Point(95, 38),
+                Width = 150,
+                Checked = true
+            };
+            _rbAttributes.CheckedChanged += (s, e) => OutputModeChanged();
+            _rbComment = new RadioButton
+            {
+                Text = "Readable summary comment",
+                Location = new Point(250, 38),
+                Width = 190
+            };
+
+            _btnPreview = new Button { Text = "Preview Attributes", Location = new Point(5, 64), Width = 130, Height = 26, Enabled = false };
             _btnPreview.Click += BtnPreview_Click;
-            _btnWrite = new Button { Text = "Write to Files", Location = new Point(140, 36), Width = 110, Height = 26, Enabled = false };
+            _btnWrite = new Button { Text = "Write to Files", Location = new Point(140, 64), Width = 110, Height = 26, Enabled = false };
             _btnWrite.Click += BtnWrite_Click;
-            _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Location = new Point(255, 36), Width = 210, Height = 26, Enabled = false };
+            _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Location = new Point(255, 64), Width = 210, Height = 26, Enabled = false };
             _btnCreateDefinitions.Click += BtnCreateDefinitions_Click;
 
             _toolbar.Controls.AddRange(new Control[]
             {
-                lblFolder, _txtFolder, _btnBrowse, _btnPreview, _btnWrite, _btnCreateDefinitions
+                lblFolder, _txtFolder, _btnBrowse,
+                lblOutput, _rbAttributes, _rbComment,
+                _btnPreview, _btnWrite, _btnCreateDefinitions
             });
 
             _txtPreview = new TextBox
@@ -221,7 +241,28 @@ namespace PluginDocumenter
 
             _btnPreview.Enabled = hasChecked;
             _btnWrite.Enabled = hasChecked && hasFolder;
-            _btnCreateDefinitions.Enabled = hasFolder;
+            // A comment needs no attribute definitions to compile against.
+            _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked;
+        }
+
+        private void OutputModeChanged()
+        {
+            _btnPreview.Text = _rbAttributes.Checked ? "Preview Attributes" : "Preview Comment";
+            UpdateButtonState();
+        }
+
+        /// <summary>
+        /// The two outputs are independent in the file: whichever mode is off returns null,
+        /// which tells <see cref="CodeFileWriter"/> to leave what is already there alone.
+        /// </summary>
+        private IEnumerable<string> Remarks(PluginTypeInfo type)
+        {
+            return _rbComment.Checked ? RemarksEmitter.Emit(type) : null;
+        }
+
+        private IEnumerable<string> Attributes(PluginTypeInfo type)
+        {
+            return _rbAttributes.Checked ? AttributeEmitter.Emit(type) : null;
         }
 
         private List<PluginTypeInfo> CheckedTypes()
@@ -246,7 +287,7 @@ namespace PluginDocumenter
             foreach (var type in CheckedTypes())
             {
                 sb.AppendLine("// " + type.TypeName);
-                foreach (var line in AttributeEmitter.Emit(type))
+                foreach (var line in Remarks(type) ?? Attributes(type))
                 {
                     sb.AppendLine(line);
                 }
@@ -288,7 +329,7 @@ namespace PluginDocumenter
                         continue;
                     }
 
-                    if (CodeFileWriter.Update(file, type.ClassName, AttributeEmitter.Emit(type)))
+                    if (CodeFileWriter.Update(file, type.ClassName, Remarks(type), Attributes(type)))
                     {
                         written.Add(type.ClassName);
                     }
