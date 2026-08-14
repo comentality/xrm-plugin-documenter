@@ -34,6 +34,8 @@ namespace PluginDocumenter
         /// <summary>Set while code, not the user, is ticking boxes.</summary>
         private bool _rendering;
 
+        private bool _splittersLaid;
+
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
         private Button _btnLoadAssemblies;
@@ -56,7 +58,7 @@ namespace PluginDocumenter
         /// </summary>
         private Timer _previewSettled;
 
-        private Panel _toolbar;
+        private TableLayoutPanel _toolbar;
         private TextBox _txtFolder;
         private Button _btnBrowse;
         private RadioButton _rbAttributes;
@@ -78,7 +80,6 @@ namespace PluginDocumenter
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                SplitterDistance = 320,
                 FixedPanel = FixedPanel.Panel1
             };
 
@@ -89,26 +90,49 @@ namespace PluginDocumenter
                 Orientation = Orientation.Horizontal
             };
 
-            var leftToolbar = new Panel { Dock = DockStyle.Top, Height = 90, Padding = new Padding(5) };
-            _btnLoadAssemblies = new Button { Text = "Load Assemblies", Location = new Point(5, 5), Width = 150, Height = 26 };
+            // Laid out rather than positioned: the pane is a splitter away from any width, and at
+            // fixed coordinates the filter and the status line are either clipped or adrift.
+            var leftToolbar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 2,
+                RowCount = 3,
+                Padding = new Padding(5, 5, 5, 3)
+            };
+            leftToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            leftToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            _btnLoadAssemblies = new Button
+            {
+                Text = "Load Assemblies",
+                Width = 150,
+                Height = 26,
+                Margin = new Padding(0, 0, 8, 4)
+            };
             _btnLoadAssemblies.Click += BtnLoadAssemblies_Click;
             _chkShowMicrosoft = new CheckBox
             {
                 Text = "Microsoft's",
-                Location = new Point(161, 9),
-                Width = 140,
-                AutoSize = false
+                AutoSize = true,
+                Margin = new Padding(0, 5, 0, 4)
             };
             _chkShowMicrosoft.CheckedChanged += (s, e) => RenderAssemblies();
 
             // No signature test settles every environment, and an ISV's app is not Microsoft's
             // and not yours either. Typing your own name is the answer that never needs one.
-            var lblFilter = new Label { Text = "Filter:", Location = new Point(5, 39), AutoSize = true };
+            var lblFilter = new Label
+            {
+                Text = "Filter:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 6, 4)
+            };
             _txtFilter = new TextBox
             {
-                Location = new Point(50, 36),
-                Width = 251,
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                Margin = new Padding(0, 0, 0, 4)
             };
             _txtFilter.TextChanged += (s, e) => RenderAssemblies();
 
@@ -117,32 +141,34 @@ namespace PluginDocumenter
             _chkAllAssemblies = new CheckBox
             {
                 Text = "All",
-                Location = new Point(5, 66),
-                Width = 46,
-                AutoSize = false,
+                AutoSize = true,
                 AutoCheck = false,
-                Enabled = false
+                Enabled = false,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 6, 0)
             };
             _chkAllAssemblies.Click += (s, e) => CheckAllAssemblies(_chkAllAssemblies.CheckState != CheckState.Checked);
 
             _lblStatus = new Label
             {
-                Location = new Point(55, 68),
-                Width = 246,
-                Height = 16,
                 AutoSize = false,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true,
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0),
                 Text = "Load the assemblies to start."
             };
 
-            leftToolbar.Controls.Add(_btnLoadAssemblies);
-            leftToolbar.Controls.Add(_chkShowMicrosoft);
-            leftToolbar.Controls.Add(lblFilter);
-            leftToolbar.Controls.Add(_txtFilter);
-            leftToolbar.Controls.Add(_chkAllAssemblies);
-            leftToolbar.Controls.Add(_lblStatus);
+            // Both on one wrapping row of their own: in a cell of the grid the button would set the
+            // width of the whole first column and the filter box would start where it ends.
+            var loadRow = Row(_btnLoadAssemblies, _chkShowMicrosoft);
+            leftToolbar.Controls.Add(loadRow, 0, 0);
+            leftToolbar.SetColumnSpan(loadRow, 2);
+            leftToolbar.Controls.Add(lblFilter, 0, 1);
+            leftToolbar.Controls.Add(_txtFilter, 1, 1);
+            leftToolbar.Controls.Add(_chkAllAssemblies, 0, 2);
+            leftToolbar.Controls.Add(_lblStatus, 1, 2);
 
             // Checked, not selected: a project that ships one assembly per plugin needs all of them
             // documented in one pass, so the list is a set rather than a pointer at one row.
@@ -156,8 +182,12 @@ namespace PluginDocumenter
                 HideSelection = false,
                 Font = new Font("Segoe UI", 9f)
             };
-            _lvAssemblies.Columns.Add("Assembly", 210);
-            _lvAssemblies.Columns.Add("Isolation", 80);
+            _lvAssemblies.Columns.Add("Assembly");
+            _lvAssemblies.Columns.Add("Isolation");
+            // The floor sits just under what the pane's own minimum leaves once a scrollbar has
+            // taken its share, so the fallback to sideways scrolling is reserved for a pane
+            // narrower than the splitter will allow.
+            ShareWidthBetweenColumns(_lvAssemblies, 230, 0.74f, 0.26f);
             _lvAssemblies.ItemChecked += LvAssemblies_ItemChecked;
 
             _checkSettled = new Timer { Interval = 120 };
@@ -187,49 +217,82 @@ namespace PluginDocumenter
                 HideSelection = false,
                 Font = new Font("Segoe UI", 9f)
             };
-            _lvTypes.Columns.Add("Plugin Class", 210);
-            _lvTypes.Columns.Add("Steps", 50);
+            _lvTypes.Columns.Add("Plugin Class");
+            _lvTypes.Columns.Add("Steps", -1, HorizontalAlignment.Right);
+            ShareWidthBetweenColumns(_lvTypes, 230, 0.8f, 0.2f);
             _lvTypes.ItemChecked += LvTypes_ItemChecked;
 
             _leftSplit.Panel2.Controls.Add(_lvTypes);
             _mainSplit.Panel1.Controls.Add(_leftSplit);
 
             // ===== RIGHT: toolbar + preview =====
-            _toolbar = new Panel { Dock = DockStyle.Top, Height = 98, Padding = new Padding(5) };
+            _toolbar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                RowCount = 3,
+                Padding = new Padding(5, 5, 5, 5)
+            };
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            var lblFolder = new Label { Text = "Source folder:", Location = new Point(5, 10), AutoSize = true };
-            _txtFolder = new TextBox { Location = new Point(95, 7), Width = 400 };
+            var lblFolder = new Label
+            {
+                Text = "Source folder:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 6, 4)
+            };
+            // A path is as long as it is, so the field takes whatever the pane can spare rather
+            // than a fixed 400px that clipped the Browse button off the edge when docked narrow.
+            _txtFolder = new TextBox
+            {
+                Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                Margin = new Padding(0, 0, 6, 4)
+            };
             _txtFolder.TextChanged += (s, e) => UpdateButtonState();
-            _btnBrowse = new Button { Text = "Browse...", Location = new Point(500, 5), Width = 80, Height = 24 };
+            _btnBrowse = new Button
+            {
+                Text = "Browse...",
+                Width = 80,
+                Height = 24,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 0, 4)
+            };
             _btnBrowse.Click += BtnBrowse_Click;
 
-            var lblOutput = new Label { Text = "Write:", Location = new Point(5, 40), AutoSize = true };
-            _rbAttributes = new RadioButton
-            {
-                Text = "Xrm Tools attributes",
-                Location = new Point(95, 38),
-                Width = 150,
-                Checked = true
-            };
-            _rbAttributes.CheckedChanged += (s, e) => UpdateButtonState();
-            _rbComment = new RadioButton
-            {
-                Text = "Readable summary comment",
-                Location = new Point(250, 38),
-                Width = 190
-            };
+            _toolbar.Controls.Add(lblFolder, 0, 0);
+            _toolbar.Controls.Add(_txtFolder, 1, 0);
+            _toolbar.Controls.Add(_btnBrowse, 2, 0);
 
-            _btnWrite = new Button { Text = "Write to Files", Location = new Point(5, 64), Width = 110, Height = 26, Enabled = false };
+            var lblOutput = new Label
+            {
+                Text = "Write:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 6, 4)
+            };
+            _rbAttributes = new RadioButton { Text = "Xrm Tools attributes", AutoSize = true, Checked = true, Margin = new Padding(0, 0, 16, 0) };
+            _rbAttributes.CheckedChanged += (s, e) => UpdateButtonState();
+            _rbComment = new RadioButton { Text = "Readable summary comment", AutoSize = true, Margin = new Padding(0) };
+
+            var modeRow = Row(_rbAttributes, _rbComment);
+            modeRow.Margin = new Padding(0, 0, 0, 4);
+            _toolbar.Controls.Add(lblOutput, 0, 1);
+            _toolbar.Controls.Add(modeRow, 1, 1);
+            _toolbar.SetColumnSpan(modeRow, 2);
+
+            _btnWrite = new Button { Text = "Write to Files", Width = 110, Height = 26, Enabled = false, Margin = new Padding(0, 0, 6, 0) };
             _btnWrite.Click += BtnWrite_Click;
-            _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Location = new Point(120, 64), Width = 210, Height = 26, Enabled = false };
+            _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Width = 210, Height = 26, Enabled = false, Margin = new Padding(0) };
             _btnCreateDefinitions.Click += BtnCreateDefinitions_Click;
 
-            _toolbar.Controls.AddRange(new Control[]
-            {
-                lblFolder, _txtFolder, _btnBrowse,
-                lblOutput, _rbAttributes, _rbComment,
-                _btnWrite, _btnCreateDefinitions
-            });
+            var buttonRow = Row(_btnWrite, _btnCreateDefinitions);
+            _toolbar.Controls.Add(buttonRow, 0, 2);
+            _toolbar.SetColumnSpan(buttonRow, 3);
 
             _txtPreview = new RichTextBox
             {
@@ -248,26 +311,98 @@ namespace PluginDocumenter
             _mainSplit.Panel2.Controls.Add(_toolbar);
 
             Controls.Add(_mainSplit);
-            Load += (s, e) =>
-            {
-                SetInitialSplit();
-                RenderPreview();
-            };
             ResumeLayout(false);
         }
 
         /// <summary>
-        /// A SplitContainer silently refuses a distance wider than it is, and at construction time
-        /// it is a default sized control, so the lists only get their width once the host has
-        /// handed this one its real size.
+        /// A row of controls that wraps rather than clips: "Create Attribute Definitions File" is
+        /// wide enough that the pair does not fit on one line once the tool is docked narrow, and a
+        /// button that falls to a second line beats one cut in half.
         /// </summary>
-        private void SetInitialSplit()
+        private static FlowLayoutPanel Row(params Control[] controls)
         {
-            var widest = _mainSplit.Width - _mainSplit.Panel2MinSize - _mainSplit.SplitterWidth;
-            if (widest > 0)
+            var row = new FlowLayoutPanel
             {
-                _mainSplit.SplitterDistance = Math.Min(320, widest);
-            }
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0)
+            };
+            row.Controls.AddRange(controls);
+            return row;
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            LaySplitters();
+            RenderPreview();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            // Only until it takes: after that the splitters belong to whoever drags them.
+            if (!_splittersLaid && _mainSplit != null) LaySplitters();
+        }
+
+        /// <summary>
+        /// Panel sizes are validated against the container's *current* size, and during
+        /// InitializeComponent that is still the 150x100 default a SplitContainer starts at: a
+        /// distance set there is silently shrunk to fit and a min size set there throws outright.
+        /// Both have to wait until the tool has been handed its real size, which is Load unless
+        /// XrmToolBox builds the tab while it is still hidden - hence the retry from OnSizeChanged.
+        /// </summary>
+        private void LaySplitters()
+        {
+            _splittersLaid =
+                LaySplit(_mainSplit, 250, 340, Math.Min(360, (int)(_mainSplit.Width * 0.32))) &
+                // Panel1 carries the toolbar as well as the list, so its minimum is that much
+                // taller than the class list's below it.
+                LaySplit(_leftSplit, 170, 90, (int)(_leftSplit.Height * 0.5));
+        }
+
+        private static bool LaySplit(SplitContainer split, int min1, int min2, int distance)
+        {
+            var span = split.Orientation == Orientation.Vertical ? split.Width : split.Height;
+            if (span < min1 + min2 + split.SplitterWidth) return false;
+
+            split.Panel1MinSize = min1;
+            split.Panel2MinSize = min2;
+            split.SplitterDistance = Math.Min(Math.Max(distance, min1), span - min2 - split.SplitterWidth);
+            return true;
+        }
+
+        /// <summary>
+        /// List columns are plain pixel widths, so a list narrower than their sum scrolls sideways
+        /// and a wider one leaves dead space past the last column. Give each column a share of the
+        /// list instead and redistribute it whenever the list is resized. Below
+        /// <paramref name="minTotal"/> the shares would ellipsise every cell down to nothing, so
+        /// the columns stop shrinking there and the list scrolls sideways as before.
+        /// </summary>
+        private static void ShareWidthBetweenColumns(ListView list, int minTotal, params float[] shares)
+        {
+            EventHandler apply = (s, e) =>
+            {
+                var available = Math.Max(list.ClientSize.Width - 4, minTotal);
+                if (available <= 0) return;
+
+                list.BeginUpdate();
+                var used = 0;
+                for (var i = 0; i < list.Columns.Count; i++)
+                {
+                    // The last column absorbs the rounding so the widths always add up exactly.
+                    var width = i == list.Columns.Count - 1 ? available - used : (int)(available * shares[i]);
+                    list.Columns[i].Width = width;
+                    used += width;
+                }
+                list.EndUpdate();
+            };
+
+            list.ClientSizeChanged += apply;
+            apply(list, EventArgs.Empty);
         }
 
         private void BtnLoadAssemblies_Click(object sender, EventArgs e)
