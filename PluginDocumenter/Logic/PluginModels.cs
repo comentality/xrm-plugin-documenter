@@ -9,6 +9,20 @@ namespace PluginDocumenter.Logic
         public string Name;
         public int IsolationMode;
 
+        /// <summary>
+        /// Whether this looks like one of the assemblies Microsoft ships, whose source is in
+        /// nobody's folder. No column on the record says so: first party assemblies are managed,
+        /// hidden and customization level 1 exactly like anything else that arrived in a solution,
+        /// so the name is the only thing left to go on. The UI keeps a switch for when it is wrong.
+        /// </summary>
+        public bool IsMicrosoft
+        {
+            get
+            {
+                return Name != null && Name.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
         public override string ToString()
         {
             return Name;

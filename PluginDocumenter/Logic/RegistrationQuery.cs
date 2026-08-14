@@ -11,6 +11,11 @@ namespace PluginDocumenter.Logic
     /// </summary>
     public static class RegistrationQuery
     {
+        /// <summary>
+        /// Every assembly the environment will admit to, Microsoft's included. Telling those apart
+        /// is <see cref="AssemblyInfo.IsMicrosoft"/>'s job and the caller's decision; there is no
+        /// server side filter that does it, which is why this no longer pretends to have one.
+        /// </summary>
         public static List<AssemblyInfo> GetAssemblies(IOrganizationService service)
         {
             var query = new QueryExpression("pluginassembly")
@@ -18,11 +23,11 @@ namespace PluginDocumenter.Logic
                 ColumnSet = new ColumnSet("pluginassemblyid", "name", "isolationmode"),
                 Criteria =
                 {
-                    // Exclude the Microsoft-shipped assemblies, which are never in the user's source.
+                    // Internal plumbing the platform registers for itself. Steps on these are not
+                    // shown by the registration tool either, so there is nothing here to document.
                     Conditions =
                     {
-                        new ConditionExpression("ishidden", ConditionOperator.Equal, false),
-                        new ConditionExpression("customizationlevel", ConditionOperator.Equal, 1)
+                        new ConditionExpression("ishidden", ConditionOperator.Equal, false)
                     }
                 },
                 Orders = { new OrderExpression("name", OrderType.Ascending) }

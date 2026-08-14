@@ -21,6 +21,7 @@ namespace PluginDocumenter
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
         private Button _btnLoadAssemblies;
+        private CheckBox _chkShowMicrosoft;
         private ListView _lvAssemblies;
         private ListView _lvTypes;
 
@@ -61,7 +62,16 @@ namespace PluginDocumenter
             var leftToolbar = new Panel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(5) };
             _btnLoadAssemblies = new Button { Text = "Load Assemblies", Location = new Point(5, 5), Width = 150, Height = 26 };
             _btnLoadAssemblies.Click += BtnLoadAssemblies_Click;
+            _chkShowMicrosoft = new CheckBox
+            {
+                Text = "Microsoft's",
+                Location = new Point(161, 9),
+                Width = 140,
+                AutoSize = false
+            };
+            _chkShowMicrosoft.CheckedChanged += (s, e) => RenderAssemblies();
             leftToolbar.Controls.Add(_btnLoadAssemblies);
+            leftToolbar.Controls.Add(_chkShowMicrosoft);
 
             _lvAssemblies = new ListView
             {
@@ -172,19 +182,50 @@ namespace PluginDocumenter
                     }
 
                     _assemblies = (List<AssemblyInfo>)result.Result;
-                    _lvAssemblies.BeginUpdate();
-                    _lvAssemblies.Items.Clear();
-                    foreach (var assembly in _assemblies)
-                    {
-                        var item = new ListViewItem(assembly.Name) { Tag = assembly };
-                        item.SubItems.Add(assembly.IsolationMode == 2 ? "Sandbox" : "None");
-                        _lvAssemblies.Items.Add(item);
-                    }
-
-                    _lvAssemblies.EndUpdate();
+                    _selectedAssembly = null;
+                    RenderAssemblies();
                     ClearTypes();
                 }
             });
+        }
+
+        /// <summary>
+        /// Fills the list from what was loaded. An environment carries dozens of Microsoft's own
+        /// assemblies and one or two of yours, so they are held back by default, with the count on
+        /// the switch that brings them back rather than the list quietly being short.
+        /// </summary>
+        private void RenderAssemblies()
+        {
+            var microsoft = _assemblies.Count(a => a.IsMicrosoft);
+            _chkShowMicrosoft.Text = microsoft == 0
+                ? "Microsoft's"
+                : "Microsoft's (" + microsoft + ")";
+
+            _lvAssemblies.BeginUpdate();
+            _lvAssemblies.Items.Clear();
+            foreach (var assembly in _assemblies.Where(a => _chkShowMicrosoft.Checked || !a.IsMicrosoft))
+            {
+                var item = new ListViewItem(assembly.Name) { Tag = assembly };
+                item.SubItems.Add(assembly.IsolationMode == 2 ? "Sandbox" : "None");
+                _lvAssemblies.Items.Add(item);
+            }
+
+            // Clearing the list drops the selection with it. Put it back, or say plainly that the
+            // assembly being documented is the one the switch just hid.
+            var reselected = _lvAssemblies.Items.Cast<ListViewItem>()
+                .FirstOrDefault(i => _selectedAssembly != null && ((AssemblyInfo)i.Tag).Id == _selectedAssembly.Id);
+
+            _lvAssemblies.EndUpdate();
+
+            if (reselected != null)
+            {
+                reselected.Selected = true;
+            }
+            else if (_selectedAssembly != null)
+            {
+                _selectedAssembly = null;
+                ClearTypes();
+            }
         }
 
         private void LvAssemblies_SelectedIndexChanged(object sender, EventArgs e)
@@ -194,7 +235,14 @@ namespace PluginDocumenter
                 return;
             }
 
-            _selectedAssembly = (AssemblyInfo)_lvAssemblies.SelectedItems[0].Tag;
+            var selected = (AssemblyInfo)_lvAssemblies.SelectedItems[0].Tag;
+            if (_selectedAssembly != null && selected.Id == _selectedAssembly.Id)
+            {
+                // A re-render put the same selection back. Its steps are already on screen.
+                return;
+            }
+
+            _selectedAssembly = selected;
             var assemblyId = _selectedAssembly.Id;
 
             WorkAsync(new WorkAsyncInfo
