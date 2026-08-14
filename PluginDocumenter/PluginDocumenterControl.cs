@@ -36,6 +36,10 @@ namespace PluginDocumenter
 
         private bool _splittersLaid;
 
+        /// <summary>Kept in fields because a control does not own the font it is handed.</summary>
+        private readonly Font _listFont = new Font("Segoe UI", 9f);
+        private readonly Font _codeFont = new Font("Consolas", 9f);
+
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
         private Button _btnLoadAssemblies;
@@ -65,6 +69,7 @@ namespace PluginDocumenter
         private RadioButton _rbComment;
         private Button _btnWrite;
         private Button _btnCreateDefinitions;
+        private Label _lblWriteHint;
         private RichTextBox _txtPreview;
 
         public PluginDocumenterControl()
@@ -180,7 +185,7 @@ namespace PluginDocumenter
                 MultiSelect = true,
                 CheckBoxes = true,
                 HideSelection = false,
-                Font = new Font("Segoe UI", 9f)
+                Font = _listFont
             };
             _lvAssemblies.Columns.Add("Assembly");
             _lvAssemblies.Columns.Add("Isolation");
@@ -215,7 +220,10 @@ namespace PluginDocumenter
                 MultiSelect = true,
                 CheckBoxes = true,
                 HideSelection = false,
-                Font = new Font("Segoe UI", 9f)
+                // The rows carry the namespace the class name was trimmed from, which a ListView
+                // shows only when asked.
+                ShowItemToolTips = true,
+                Font = _listFont
             };
             _lvTypes.Columns.Add("Plugin Class");
             _lvTypes.Columns.Add("Steps", -1, HorizontalAlignment.Right);
@@ -232,7 +240,7 @@ namespace PluginDocumenter
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 3,
-                RowCount = 3,
+                RowCount = 4,
                 Padding = new Padding(5, 5, 5, 5)
             };
             _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -294,6 +302,21 @@ namespace PluginDocumenter
             _toolbar.Controls.Add(buttonRow, 0, 2);
             _toolbar.SetColumnSpan(buttonRow, 3);
 
+            // A disabled button gives no reason, and the only status line the tool had is in the
+            // other pane counting assemblies. This one answers for the two buttons above it.
+            _lblWriteHint = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Height = 17,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0, 3, 0, 0)
+            };
+            _toolbar.Controls.Add(_lblWriteHint, 0, 3);
+            _toolbar.SetColumnSpan(_lblWriteHint, 3);
+
             _txtPreview = new RichTextBox
             {
                 Dock = DockStyle.Fill,
@@ -304,7 +327,7 @@ namespace PluginDocumenter
                 // left to itself would underline them in its own blue over the colouring.
                 DetectUrls = false,
                 BackColor = Color.White,
-                Font = new Font("Consolas", 9f)
+                Font = _codeFont
             };
 
             _mainSplit.Panel2.Controls.Add(_txtPreview);
@@ -332,6 +355,30 @@ namespace PluginDocumenter
             };
             row.Controls.AddRange(controls);
             return row;
+        }
+
+        /// <summary>
+        /// XrmToolBox builds a fresh control each time the tool is opened and disposes it when the
+        /// tab is closed, but nothing here belongs to a container, so nothing here goes with it:
+        /// the two timers would keep ticking against a dead control, and the fonts are handles the
+        /// controls they were handed to never owned.
+        /// </summary>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_checkSettled != null) _checkSettled.Dispose();
+                if (_previewSettled != null) _previewSettled.Dispose();
+            }
+
+            base.Dispose(disposing);
+
+            // After the controls that were drawing with them are gone.
+            if (disposing)
+            {
+                _listFont.Dispose();
+                _codeFont.Dispose();
+            }
         }
 
         protected override void OnLoad(EventArgs e)
@@ -639,11 +686,22 @@ namespace PluginDocumenter
         private void UpdateButtonState()
         {
             var hasChecked = _lvTypes.CheckedItems.Count > 0;
-            var hasFolder = _txtFolder.Text.Trim().Length > 0 && Directory.Exists(_txtFolder.Text.Trim());
+            var folder = _txtFolder.Text.Trim();
+            var hasFolder = folder.Length > 0 && Directory.Exists(folder);
 
             _btnWrite.Enabled = hasChecked && hasFolder;
             // A comment needs no attribute definitions to compile against.
             _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked;
+
+            // A path is typed or pasted a character at a time and one wrong letter reads the same
+            // as a right one, so the field says whether it landed rather than leaving the buttons
+            // to go quiet for a reason nothing gives.
+            _txtFolder.ForeColor = folder.Length > 0 && !hasFolder ? Color.Firebrick : SystemColors.WindowText;
+            _lblWriteHint.Text =
+                folder.Length == 0 ? "Choose the folder your plugin source is in." :
+                !hasFolder ? "No folder at that path." :
+                !hasChecked ? "Tick the classes to document." :
+                string.Empty;
 
             UpdateStatus();
 
