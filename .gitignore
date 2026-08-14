@@ -10,3 +10,5 @@ artifacts/
 *.bak
 # The private XrmToolBox instance xtb.ps1 builds, including its connection and its token cache.
 tests/.xtb/
+# Layout screenshots from ui.ps1, rewritten on every run.
+tests/.ui/
