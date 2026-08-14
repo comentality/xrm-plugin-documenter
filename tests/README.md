@@ -36,14 +36,18 @@ The connection is an ordinary OAuth connection against the client id XrmToolBox 
 uses, so it signs you in interactively once and reads the cached token after that. The only
 thing left to type is the source folder, which the script puts on the clipboard.
 
-Two things cost an hour each and are easy to trip over again:
+`xtb.ps1` itself is fifteen lines. Everything in it that is XrmToolBox rather than Plugin
+Documenter lives in the [XtbSandbox](https://github.com/comentality/xrmtoolbox-sandbox)
+module, shared with the other XrmToolBox tools here, so install it once:
 
-- `/plugin:` and `/connection:` are read off the **raw** command line, quotes and all. Pass
-  them as separate `-ArgumentList` elements, so the quotes are consumed by argv, and
-  XrmToolBox hangs on the splash screen with no error, forever.
-- The reply url property is `ReplyUrl`. Call it `RedirectUri`, which is what it is called in
-  a connection string, and the element is silently dropped: the connection then fails with
-  *No redirectUri was configured. ADAL does not provide any defaults.*
+```powershell
+Install-Module XtbSandbox -Scope CurrentUser
+```
+
+The details that cost an afternoon each — `ReplyUrl` is not `RedirectUri`, `/plugin:` and
+`/connection:` are read off the raw command line, `/overridepath` does not isolate as much
+as it looks — are written down in that module's README rather than here, so there is one
+copy of them to be wrong.
 
 ## The parts
 
