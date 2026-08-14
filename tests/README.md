@@ -29,12 +29,17 @@ all of it. The instance holds exactly one tool, so the tools list is the tool.
 ```powershell
 .\xtb.ps1              # build, wire up, launch
 .\xtb.ps1 -Reset       # throw the instance away and build it again
+.\xtb.ps1 -ResetAuth   # forget the cached sign in, which -Reset leaves alone
 .\xtb.ps1 -NoLaunch    # set it up without starting anything
 ```
 
 The connection is an ordinary OAuth connection against the client id XrmToolBox itself
 uses, so it signs you in interactively once and reads the cached token after that. The only
 thing left to type is the source folder, which the script puts on the clipboard.
+
+That cached sign in is not in `tests\.xtb`. It lives in `%TEMP%\{ConnectionId}`, keyed by
+the connection id, so it outlives `-Reset` and deleting the folder — and renaming the
+connection changes the id, which costs one interactive sign in.
 
 `xtb.ps1` itself is fifteen lines. Everything in it that is XrmToolBox rather than Plugin
 Documenter lives in the [XtbSandbox](https://github.com/comentality/xrmtoolbox-sandbox)

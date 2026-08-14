@@ -6,6 +6,7 @@
 #
 #   .\xtb.ps1              # build, wire up, launch
 #   .\xtb.ps1 -Reset       # throw the instance away and rebuild it
+#   .\xtb.ps1 -ResetAuth   # forget the cached sign in, which -Reset leaves alone
 #   .\xtb.ps1 -NoLaunch    # set it up without starting XrmToolBox
 #
 # The connection points at the active organization of the current pac auth profile, which
@@ -19,6 +20,7 @@ param(
     [string]$Environment,
     [string]$XrmToolBoxPath,
     [switch]$Reset,
+    [switch]$ResetAuth,
     [switch]$NoLaunch
 )
 
