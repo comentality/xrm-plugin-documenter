@@ -3,9 +3,13 @@
     Removes everything register.ps1 put in the environment.
 
 .DESCRIPTION
-    Deletes both fixture solutions, companion first. Because they are managed, deleting
-    them takes the steps, images, plugin types and the assembly itself with them - which
-    an unmanaged solution would not: its components stay behind in the Default solution.
+    Deletes all three fixture solutions, companion first. Because they are managed,
+    deleting them takes the steps, images, plugin types and the assemblies themselves with
+    them - which an unmanaged solution would not: its components stay behind in the
+    Default solution.
+
+    The publishers the solutions were imported under are left alone. They own nothing once
+    the solutions are gone, and pac has no command for deleting one.
 
     A solution that is not there is not an error; this is safe to run at any time.
 #>
@@ -18,8 +22,10 @@ $ErrorActionPreference = 'Stop'
 $manifest = Import-PowerShellDataFile (Join-Path $PSScriptRoot 'registrations.psd1')
 $envArgs = if ($Environment) { @('--environment', $Environment) } else { @() }
 
-# Companion first: its steps run against plugin types the main solution owns.
-foreach ($name in @($manifest.DisabledSolutionName, $manifest.SolutionName)) {
+# Companion first: its steps run against plugin types the other solutions own.
+$names = @($manifest.DisabledSolution.Name) + @($manifest.Solutions.Name)
+
+foreach ($name in $names) {
     Write-Host "Deleting $name..."
     $output = & pac @(@('solution', 'delete', '--solution-name', $name) + $envArgs) 2>&1 |
         ForEach-Object { "$_" }
@@ -37,4 +43,8 @@ foreach ($name in @($manifest.DisabledSolutionName, $manifest.SolutionName)) {
 }
 
 Write-Host ''
-Write-Host 'Unregistered. The TestPlugins assembly and all of its steps are gone.'
+Write-Host 'Unregistered. Every fixture assembly and all of their steps are gone.'
+
+# Explicit, because a solution that was not installed leaves pac's non zero exit code
+# behind and this script would otherwise inherit it after saying everything went fine.
+exit 0

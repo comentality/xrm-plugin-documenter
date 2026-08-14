@@ -36,4 +36,4 @@ Start-XtbSandbox @PSBoundParameters `
     -ProjectPath    (Join-Path $PSScriptRoot "..\PluginDocumenter\PluginDocumenter.csproj") `
     -ToolName       "Plugin Documenter" `
     -ConnectionName "PluginDocumenter E2E" `
-    -Clipboard      (Join-Path $PSScriptRoot "TestPlugins")
+    -Clipboard      (Join-Path $PSScriptRoot "src")

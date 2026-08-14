@@ -6,10 +6,14 @@
     Run after register.ps1, before pointing the documenter at the environment: if this
     fails, anything the documenter writes is being judged against the wrong registration.
 
-    Every check is a FetchXML query whose filter spells out what the step or image is
-    supposed to be, asking the server to agree rather than parsing values back out of
-    pac's fixed width tables. A row means the environment matches; no row means it does
-    not, and the check names what it was looking for.
+    Every check is a FetchXML query whose filter spells out what the assembly, step or
+    image is supposed to be, asking the server to agree rather than parsing values back
+    out of pac's fixed width tables. A row means the environment matches; no row means it
+    does not, and the check names what it was looking for.
+
+    With several assemblies in play, every step query is also tied to the assembly it
+    belongs to. Shared.Twin is registered from two of them, so a check that only named the
+    plugin type would happily pass against the wrong one.
 #>
 [CmdletBinding()]
 param([string] $Environment)
@@ -57,6 +61,30 @@ function Test-Fetch {
     }
 }
 
+function Test-Count {
+    param([string] $Description, [int] $Found, [int] $Expected)
+
+    if ($Found -eq $Expected) {
+        $script:passed++
+        Write-Host "  ok    $Description"
+    } else {
+        $script:failures += "$Description - found $Found, expected $Expected"
+        Write-Host "  FAIL  $Description - found $Found, expected $Expected" -ForegroundColor Red
+    }
+}
+
+function Get-Plural {
+    param([int] $Count, [string] $Noun)
+
+    if ($Count -eq 1) { "1 $Noun" } else { "$Count $Noun`s" }
+}
+
+function Measure-Guids {
+    param([string] $Output)
+
+    ([regex]::Matches($Output, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')).Count
+}
+
 # A condition on a value that may legitimately be empty. Dataverse stores an empty string
 # as null, so "no filtering attributes" has to be asked for as null, not as "".
 function New-Condition {
@@ -86,11 +114,13 @@ function New-TextCondition {
     }
 }
 
+$allSteps = Get-AllSteps $manifest
+
 # A step's filtered entity lives on sdkmessagefilter as primaryobjecttypecode, which is an
 # integer as far as a condition is concerned, and which pac renders as the entity's display
 # name ("Note" for annotation) rather than its logical name. So neither the obvious filter
 # nor the obvious string comparison works: resolve the codes first and filter on those.
-$entities = @($manifest.Steps | ForEach-Object { Get-StepEntity $_ } | Where-Object { $_ -ne 'none' } | Sort-Object -Unique)
+$entities = @($allSteps | ForEach-Object { Get-StepEntity $_.Step } | Where-Object { $_ -ne 'none' } | Sort-Object -Unique)
 $objectTypeCodes = @{}
 if ($entities.Count -gt 0) {
     $rows = Invoke-Fetch @"
@@ -120,48 +150,72 @@ $($entities | ForEach-Object { "        <value>$_</value>" } | Out-String)      
     }
 }
 
-Write-Host "Checking $($manifest.Steps.Count) steps against the environment..."
+Write-Host "Checking $($manifest.Assemblies.Count) assemblies and $($allSteps.Count) steps against the environment..."
 
-# ---------------------------------------------------------------- the assembly
+foreach ($assembly in $manifest.Assemblies) {
+    Write-Host ''
+    Write-Host $assembly.Name
 
-Test-Fetch -Description 'assembly TestPlugins is visible to the documenter' -Expect $manifest.AssemblyId -Xml @"
+    # ------------------------------------------------------------ the assembly itself
+
+    Test-Fetch -Description "assembly $($assembly.Name) is visible to the documenter" `
+        -Expect (Get-AssemblyId $assembly) -Xml @"
 <fetch>
   <entity name="pluginassembly">
     <attribute name="pluginassemblyid" />
     <filter>
-      <condition attribute="name" operator="eq" value="$($manifest.Assembly)" />
-      <condition attribute="pluginassemblyid" operator="eq" value="$($manifest.AssemblyId)" />
+      <condition attribute="name" operator="eq" value="$($assembly.Name)" />
+      <condition attribute="pluginassemblyid" operator="eq" value="$(Get-AssemblyId $assembly)" />
       <condition attribute="isolationmode" operator="eq" value="2" />
-      <!-- The two conditions the documenter's own assembly query uses. -->
+      <!-- The condition the documenter's own assembly query uses. -->
       <condition attribute="ishidden" operator="eq" value="false" />
-      <condition attribute="customizationlevel" operator="eq" value="1" />
     </filter>
   </entity>
 </fetch>
 "@
 
-# ---------------------------------------------------------------- steps
+    # Every type the matrix declares, and no others. A type in the environment that is not
+    # in registrations.psd1 would show up in the tool and be judged against nothing.
+    $typeRows = Invoke-Fetch @"
+<fetch>
+  <entity name="plugintype">
+    <attribute name="plugintypeid" />
+    <link-entity name="pluginassembly" from="pluginassemblyid" to="pluginassemblyid" alias="a">
+      <filter>
+        <condition attribute="name" operator="eq" value="$($assembly.Name)" />
+      </filter>
+    </link-entity>
+  </entity>
+</fetch>
+"@
 
-foreach ($step in $manifest.Steps) {
-    $stepId = Get-StepId $step
-    $entity = Get-StepEntity $step
-    $state = if (Get-StepValue $step 'Disabled' $false) { 1 } else { 0 }
+    Test-Count -Description "  exactly $(Get-Plural $assembly.Types.Count 'plugin type')" `
+        -Found (Measure-Guids $typeRows) -Expected $assembly.Types.Count
 
-    $conditions = @(
-        "      <condition attribute=`"sdkmessageprocessingstepid`" operator=`"eq`" value=`"$stepId`" />"
-        "      <condition attribute=`"stage`" operator=`"eq`" value=`"$($step.Stage)`" />"
-        "      <condition attribute=`"mode`" operator=`"eq`" value=`"$($step.Mode)`" />"
-        "      <condition attribute=`"rank`" operator=`"eq`" value=`"$($step.Rank)`" />"
-        "      <condition attribute=`"statecode`" operator=`"eq`" value=`"$state`" />"
-        "      <condition attribute=`"name`" operator=`"eq`" value=`"$(ConvertTo-XmlText (Get-StepName $step))`" />"
-        "      <condition attribute=`"asyncautodelete`" operator=`"eq`" value=`"$(([bool](Get-StepValue $step 'AsyncAutoDelete' $false)).ToString().ToLower())`" />"
-        (New-Condition 'filteringattributes' (Get-StepValue $step 'Filter'))
-        (New-TextCondition 'description' (Get-StepValue $step 'Description'))
-        (New-TextCondition 'configuration' (Get-StepValue $step 'Configuration'))
-    )
+    # ------------------------------------------------------------ steps
 
-    # The message name and the filtered entity live on linked records, not on the step.
-    $links = @"
+    foreach ($step in $assembly.Steps) {
+        $stepId = Get-StepId $assembly $step
+        $entity = Get-StepEntity $step
+        $state = if (Get-StepValue $step 'Disabled' $false) { 1 } else { 0 }
+
+        $conditions = @(
+            "      <condition attribute=`"sdkmessageprocessingstepid`" operator=`"eq`" value=`"$stepId`" />"
+            "      <condition attribute=`"stage`" operator=`"eq`" value=`"$($step.Stage)`" />"
+            "      <condition attribute=`"mode`" operator=`"eq`" value=`"$($step.Mode)`" />"
+            "      <condition attribute=`"rank`" operator=`"eq`" value=`"$($step.Rank)`" />"
+            "      <condition attribute=`"statecode`" operator=`"eq`" value=`"$state`" />"
+            "      <condition attribute=`"name`" operator=`"eq`" value=`"$(ConvertTo-XmlText (Get-StepName $step))`" />"
+            "      <condition attribute=`"asyncautodelete`" operator=`"eq`" value=`"$(([bool](Get-StepValue $step 'AsyncAutoDelete' $false)).ToString().ToLower())`" />"
+            (New-Condition 'filteringattributes' (Get-StepValue $step 'Filter'))
+            (New-TextCondition 'description' (Get-StepValue $step 'Description'))
+            (New-TextCondition 'configuration' (Get-StepValue $step 'Configuration'))
+        )
+
+        # The message name and the filtered entity live on linked records, not on the step.
+        # The plugin type is qualified by its assembly, because a type name on its own is
+        # not unique across the fixture.
+        $links = @"
     <link-entity name="sdkmessage" from="sdkmessageid" to="sdkmessageid" alias="m">
       <filter>
         <condition attribute="name" operator="eq" value="$($step.Message)" />
@@ -171,38 +225,43 @@ foreach ($step in $manifest.Steps) {
       <filter>
         <condition attribute="typename" operator="eq" value="$($step.Type)" />
       </filter>
+      <link-entity name="pluginassembly" from="pluginassemblyid" to="pluginassemblyid" alias="ta">
+        <filter>
+          <condition attribute="name" operator="eq" value="$($assembly.Name)" />
+        </filter>
+      </link-entity>
     </link-entity>
 "@
 
-    if ($entity -eq 'none') {
-        # A step on a global message has no filter at all.
-        $conditions += '      <condition attribute="sdkmessagefilterid" operator="null" />'
-    } else {
-        $links += @"
+        if ($entity -eq 'none') {
+            # A step on a global message has no filter at all.
+            $conditions += '      <condition attribute="sdkmessagefilterid" operator="null" />'
+        } else {
+            $links += @"
     <link-entity name="sdkmessagefilter" from="sdkmessagefilterid" to="sdkmessagefilterid" alias="f">
       <filter>
         <condition attribute="primaryobjecttypecode" operator="eq" value="$($objectTypeCodes[$entity])" />
       </filter>
     </link-entity>
 "@
-    }
+        }
 
-    if (Get-StepValue $step 'Impersonate' $false) {
-        # Whoever registered is whoever the step impersonates, so there is no fixed name to
-        # assert; that the link resolves at all is the fact worth checking.
-        $links += @"
+        if (Get-StepValue $step 'Impersonate' $false) {
+            # Whoever registered is whoever the step impersonates, so there is no fixed name
+            # to assert; that the link resolves at all is the fact worth checking.
+            $links += @"
     <link-entity name="systemuser" from="systemuserid" to="impersonatinguserid" alias="u" link-type="inner">
       <attribute name="fullname" />
     </link-entity>
 "@
-    } else {
-        $conditions += '      <condition attribute="impersonatinguserid" operator="null" />'
-    }
+        } else {
+            $conditions += '      <condition attribute="impersonatinguserid" operator="null" />'
+        }
 
-    $what = '{0} {1} {2}{3} rank {4}' -f $step.Id, $step.Type.Replace('TestPlugins.', ''),
-        $step.Message, $(if ($entity -eq 'none') { '' } else { " of $entity" }), $step.Rank
+        $what = '  {0} {1} {2}{3} rank {4}' -f $step.Id, (Get-FriendlyName $assembly $step.Type),
+            $step.Message, $(if ($entity -eq 'none') { '' } else { " of $entity" }), $step.Rank
 
-    Test-Fetch -Description $what -Expect $stepId -Xml @"
+        Test-Fetch -Description $what -Expect $stepId -Xml @"
 <fetch>
   <entity name="sdkmessageprocessingstep">
     <attribute name="sdkmessageprocessingstepid" />
@@ -214,22 +273,22 @@ $links
 </fetch>
 "@
 
-    $images = Get-StepImages $step
-    for ($i = 0; $i -lt $images.Count; $i++) {
-        $image = $images[$i]
-        $imageId = Get-ImageId $step ($i + 1)
+        $images = Get-StepImages $step
+        for ($i = 0; $i -lt $images.Count; $i++) {
+            $image = $images[$i]
+            $imageId = Get-ImageId $assembly $step ($i + 1)
 
-        $imageConditions = @(
-            "      <condition attribute=`"sdkmessageprocessingstepimageid`" operator=`"eq`" value=`"$imageId`" />"
-            "      <condition attribute=`"sdkmessageprocessingstepid`" operator=`"eq`" value=`"$stepId`" />"
-            "      <condition attribute=`"imagetype`" operator=`"eq`" value=`"$($image.Type)`" />"
-            "      <condition attribute=`"name`" operator=`"eq`" value=`"$(ConvertTo-XmlText $image.Name)`" />"
-            "      <condition attribute=`"entityalias`" operator=`"eq`" value=`"$(ConvertTo-XmlText $image.Alias)`" />"
-            "      <condition attribute=`"messagepropertyname`" operator=`"eq`" value=`"$(Get-StepValue $image 'Property' 'Target')`" />"
-            (New-Condition 'attributes' (Get-StepValue $image 'Attributes'))
-        )
+            $imageConditions = @(
+                "      <condition attribute=`"sdkmessageprocessingstepimageid`" operator=`"eq`" value=`"$imageId`" />"
+                "      <condition attribute=`"sdkmessageprocessingstepid`" operator=`"eq`" value=`"$stepId`" />"
+                "      <condition attribute=`"imagetype`" operator=`"eq`" value=`"$($image.Type)`" />"
+                "      <condition attribute=`"name`" operator=`"eq`" value=`"$(ConvertTo-XmlText $image.Name)`" />"
+                "      <condition attribute=`"entityalias`" operator=`"eq`" value=`"$(ConvertTo-XmlText $image.Alias)`" />"
+                "      <condition attribute=`"messagepropertyname`" operator=`"eq`" value=`"$(Get-StepValue $image 'Property' 'Target')`" />"
+                (New-Condition 'attributes' (Get-StepValue $image 'Attributes'))
+            )
 
-        Test-Fetch -Description "  image $($image.Name) on $($step.Id)" -Expect $imageId -Xml @"
+            Test-Fetch -Description "    image $($image.Name) on $($step.Id)" -Expect $imageId -Xml @"
 <fetch>
   <entity name="sdkmessageprocessingstepimage">
     <attribute name="sdkmessageprocessingstepimageid" />
@@ -239,21 +298,21 @@ $($imageConditions -join "`r`n")
   </entity>
 </fetch>
 "@
+        }
     }
-}
 
-# ---------------------------------------------------------------- nothing extra
+    # ------------------------------------------------------------ nothing extra
 
-# The suite is only meaningful if the environment holds exactly the matrix and no more, so
-# count what is there rather than only checking that each expected step exists.
-$all = Invoke-Fetch @"
+    # The suite is only meaningful if the environment holds exactly the matrix and no more,
+    # so count what is there rather than only checking that each expected step exists.
+    $stepRows = Invoke-Fetch @"
 <fetch>
   <entity name="sdkmessageprocessingstep">
     <attribute name="sdkmessageprocessingstepid" />
     <link-entity name="plugintype" from="plugintypeid" to="plugintypeid" alias="t">
       <link-entity name="pluginassembly" from="pluginassemblyid" to="pluginassemblyid" alias="a">
         <filter>
-          <condition attribute="name" operator="eq" value="$($manifest.Assembly)" />
+          <condition attribute="name" operator="eq" value="$($assembly.Name)" />
         </filter>
       </link-entity>
     </link-entity>
@@ -261,24 +320,25 @@ $all = Invoke-Fetch @"
 </fetch>
 "@
 
-$found = ([regex]::Matches($all, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')).Count
-if ($found -eq $manifest.Steps.Count) {
-    $script:passed++
-    Write-Host "  ok    exactly $found steps registered against TestPlugins"
-} else {
-    $script:failures += "step count is $found, expected $($manifest.Steps.Count)"
-    Write-Host "  FAIL  step count is $found, expected $($manifest.Steps.Count)" -ForegroundColor Red
-}
+    Test-Count -Description "  exactly $(Get-Plural $assembly.Steps.Count 'step')" `
+        -Found (Measure-Guids $stepRows) -Expected $assembly.Steps.Count
 
-# NeverRegistered and Beta.Duplicate exist as plugin types but must have no steps, so the
-# documenter has something it is required to leave out of its list.
-foreach ($stepless in @('TestPlugins.NeverRegistered', 'TestPlugins.Beta.Duplicate')) {
-    $rows = Invoke-Fetch @"
+    # ------------------------------------------------------------ the stepless types
+
+    # Types with no steps are what the documenter is required to leave out of its list, so
+    # each one has to still be there and still have nothing against it.
+    $registered = @($assembly.Steps | ForEach-Object { $_.Type } | Sort-Object -Unique)
+    foreach ($type in $assembly.Types) {
+        if ($registered -contains $type.Name) {
+            continue
+        }
+
+        $rows = Invoke-Fetch @"
 <fetch>
   <entity name="plugintype">
     <attribute name="plugintypeid" />
     <filter>
-      <condition attribute="typename" operator="eq" value="$stepless" />
+      <condition attribute="plugintypeid" operator="eq" value="$(Get-TypeId $assembly $type)" />
     </filter>
     <link-entity name="sdkmessageprocessingstep" from="plugintypeid" to="plugintypeid" alias="s" link-type="inner">
       <attribute name="sdkmessageprocessingstepid" />
@@ -287,12 +347,13 @@ foreach ($stepless in @('TestPlugins.NeverRegistered', 'TestPlugins.Beta.Duplica
 </fetch>
 "@
 
-    if ($rows -match 'No results returned') {
-        $script:passed++
-        Write-Host "  ok    $stepless is registered with no steps"
-    } else {
-        $script:failures += "$stepless has steps and should not"
-        Write-Host "  FAIL  $stepless has steps and should not" -ForegroundColor Red
+        if ($rows -match 'No results returned') {
+            $script:passed++
+            Write-Host "  ok    $($type.Name) is registered with no steps"
+        } else {
+            $script:failures += "$($type.Name) has steps and should not"
+            Write-Host "  FAIL  $($type.Name) has steps and should not" -ForegroundColor Red
+        }
     }
 }
 

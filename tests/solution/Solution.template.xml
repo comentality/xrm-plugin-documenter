@@ -1,32 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The solution manifest every fixture solution is stamped out of. build.ps1 replaces the
+  doubled-brace tokens below and checks that none are left; nothing else in here varies.
+
+  Managed, and that is the whole point. Deleting an unmanaged solution leaves every
+  component behind in the Default solution, so unregister.ps1 would unregister nothing.
+  Deleting a managed one takes the steps, images, plugin types and assemblies with it.
+
+  The Addresses block is boilerplate the publisher element requires and nothing reads.
+-->
 <ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <SolutionManifest>
-    <UniqueName>PluginDocumenterE2E</UniqueName>
+    <UniqueName>{{SolutionUniqueName}}</UniqueName>
     <LocalizedNames>
-      <LocalizedName description="Plugin Documenter E2E Fixtures" languagecode="1033" />
+      <LocalizedName description="{{SolutionTitle}}" languagecode="1033" />
     </LocalizedNames>
     <Descriptions>
       <Description description="Empty plugins registered every way the Plugin Documenter has to describe. Safe to delete." languagecode="1033" />
     </Descriptions>
     <Version>1.0</Version>
-    <!--
-      Managed, and that is the whole point. Deleting an unmanaged solution leaves every
-      component behind in the Default solution, so unregister.ps1 would unregister nothing.
-      Deleting a managed one takes the steps, images, plugin types and assembly with it.
-    -->
     <Managed>1</Managed>
     <Publisher>
-      <UniqueName>Comentality</UniqueName>
+      <UniqueName>{{PublisherUniqueName}}</UniqueName>
       <LocalizedNames>
-        <LocalizedName description="Comentality" languagecode="1033" />
+        <LocalizedName description="{{PublisherName}}" languagecode="1033" />
       </LocalizedNames>
       <Descriptions>
-        <Description description="Comentality" languagecode="1033" />
+        <Description description="{{PublisherName}}" languagecode="1033" />
       </Descriptions>
       <EMailAddress xsi:nil="true"></EMailAddress>
       <SupportingWebsiteUrl xsi:nil="true"></SupportingWebsiteUrl>
-      <CustomizationPrefix>cmtl</CustomizationPrefix>
-      <CustomizationOptionValuePrefix>34429</CustomizationOptionValuePrefix>
+      <CustomizationPrefix>{{PublisherPrefix}}</CustomizationPrefix>
+      <CustomizationOptionValuePrefix>{{PublisherOptionValuePrefix}}</CustomizationOptionValuePrefix>
       <Addresses>
         <Address>
           <AddressNumber>1</AddressNumber>
@@ -87,12 +92,7 @@
       </Addresses>
     </Publisher>
     <RootComponents>
-      <!--
-        Both identifiers, because the two halves of the toolchain disagree: SolutionPackager
-        validates the assembly root component by id, the server matches it by schema name.
-      -->
-      <RootComponent type="91" id="{9a5b3c10-0000-4a00-9000-000000000001}" schemaName="TestPlugins, Version=1.0.0.0, Culture=neutral, PublicKeyToken=121ea7adccc4c3d7" behavior="0" />
-      <!-- STEP-ROOT-COMPONENTS: one type="92" entry per step in registrations.psd1, written by build.ps1. -->
+{{RootComponents}}
     </RootComponents>
     <MissingDependencies />
   </SolutionManifest>

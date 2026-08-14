@@ -18,7 +18,12 @@
       fixtures compile against the same definitions the tool emits, so a build after a run
       is itself a test: if the generated attributes do not compile, this project breaks.
     -->
-    <Compile Include="..\..\assets\XrmToolsMetaAttributes.cs" Link="XrmToolsMetaAttributes.cs" />
+    <Compile Include="..\..\..\assets\XrmToolsMetaAttributes.cs" Link="XrmToolsMetaAttributes.cs" />
+    <!--
+      Shared with Contoso.Crm.Plugins, which links the same file. Shared.Twin is therefore
+      a type in both assemblies and is registered from both, against one .cs.
+    -->
+    <Compile Include="..\Shared\Twin.cs" Link="Shared\Twin.cs" />
   </ItemGroup>
 
   <ItemGroup>

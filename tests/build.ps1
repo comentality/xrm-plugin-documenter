@@ -1,21 +1,40 @@
 <#
 .SYNOPSIS
-    Builds the fixture solution zips from registrations.psd1 and the test plugin assembly.
+    Builds the fixture solution zips from registrations.psd1 and the test plugin assemblies.
 
 .DESCRIPTION
     Turns the test matrix into importable solutions:
 
-      1. builds TestPlugins.dll
+      1. builds every fixture assembly and reads its real public key token back off the DLL
       2. resolves each message name to the target environment's sdkmessageid, and the
          signed in user's full name for the impersonating step, so nothing environment
          specific has to be committed
-      3. writes one SdkMessageProcessingStep xml per entry in the matrix
-      4. packs two managed solutions with SolutionPackager
+      3. writes the PluginAssembly metadata for each assembly and one
+         SdkMessageProcessingStep xml per entry in the matrix
+      4. packs one managed solution per publisher, plus the companion described below
 
-    Two, because of a wrinkle worth knowing about: the solution format cannot carry a
-    step's state, and every step lands Disabled unless the import is run with
-    --activate-plugins, which then enables all of them. So the steps the matrix marks
-    Disabled go into a companion solution that register.ps1 imports without that flag.
+    Every assembly's metadata is generated rather than committed, because five copies of
+    the same xml is five chances to get one of them subtly wrong. What is worth knowing
+    about the shape of it, since getting any of this wrong fails the import with a bare
+    NullReferenceException out of GetPluginAssembliesTable and no hint as to why:
+
+      - FullName is an attribute on PluginAssembly and is required. So are
+        AssemblyQualifiedName and FriendlyName on each PluginType.
+      - Almost everything else about the assembly - name, version, culture, public key
+        token - is read out of FullName rather than declared separately.
+      - The child elements are a sequence, not a bag: Description, IsolationMode,
+        SourceType, IntroducedVersion, IsCustomizable, FileName, PluginTypes, in that
+        order. The solution file schema is the authority:
+        https://learn.microsoft.com/power-apps/developer/model-driven-apps/customization-solutions-file-schema
+      - FileName points at the assembly's path inside the solution zip, and SourceType
+        also decides whether SolutionPackager carries the DLL into the zip at all. Without
+        it the zip packs happily and the import is what fails, so the pack is checked.
+      - IsolationMode 2 is sandbox, which is why every fixture assembly is strong named.
+
+    The companion solution exists because of a wrinkle worth knowing about: the solution
+    format cannot carry a step's state, and every step lands Disabled unless the import is
+    run with --activate-plugins, which then enables all of them. So the steps the matrix
+    marks Disabled go into a solution that register.ps1 imports without that flag.
 
     Managed, because deleting an unmanaged solution leaves every component behind in the
     Default solution - unregister.ps1 would unregister nothing.
@@ -27,7 +46,7 @@ param(
     # Environment URL or id. Defaults to the active organization of the pac auth profile.
     [string] $Environment,
 
-    # Reuse the existing TestPlugins.dll instead of rebuilding it.
+    # Reuse the assemblies already in bin\Release instead of rebuilding them.
     [switch] $SkipAssemblyBuild
 )
 
@@ -39,10 +58,6 @@ $root = $PSScriptRoot
 
 $manifest = Import-PowerShellDataFile (Join-Path $root 'registrations.psd1')
 $obj      = Join-Path $root 'obj'
-$assembly = Join-Path $root 'TestPlugins\bin\Release\net462\TestPlugins.dll'
-
-# The folder SolutionPackager reads the assembly and its metadata from.
-$assemblyFolder = 'PluginAssemblies\TestPlugins-9A5B3C10'
 
 $envArgs = if ($Environment) { @('--environment', $Environment) } else { @() }
 
@@ -70,37 +85,62 @@ function Get-IdByName {
     $Matches[1]
 }
 
-# ---------------------------------------------------------------- assembly
-
-if (-not $SkipAssemblyBuild) {
-    Write-Host 'Building TestPlugins.dll...'
-    # Out-Host, not the pipeline: this script returns the zip paths, and anything else that
-    # reaches the pipeline ends up bundled in with them.
-    & dotnet build (Join-Path $root 'TestPlugins\TestPlugins.csproj') -c Release -v quiet --nologo | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'TestPlugins failed to build.' }
-}
-
-if (-not (Test-Path $assembly)) {
-    throw "TestPlugins.dll not found at $assembly. Run without -SkipAssemblyBuild."
-}
+# ---------------------------------------------------------------- assemblies
 
 New-Item -ItemType Directory -Path $obj -Force | Out-Null
 
-# Plugin type ids live in the assembly metadata; the steps refer to them by class name.
-$data = [xml](Get-Content (Join-Path $root "solution\src\$assemblyFolder\TestPlugins.dll.data.xml") -Raw)
-$qualifier = ', ' + $data.PluginAssembly.FullName
-$assemblyPath = $data.PluginAssembly.FileName.TrimStart('/')
+# Everything derived per assembly, keyed by assembly name: where the DLL is, what it turned
+# out to be signed with, and the ids of its plugin types.
+$built = @{}
 
-# Unbraced, which is how the server writes them back out on export.
-$typeIds = @{}
-foreach ($type in $data.PluginAssembly.PluginTypes.PluginType) {
-    $typeIds[$type.Name] = $type.PluginTypeId.Trim('{', '}')
+foreach ($assembly in $manifest.Assemblies) {
+    $project = Join-Path $root $assembly.Project
+    $dll     = Join-Path (Split-Path $project -Parent) "bin\Release\net462\$($assembly.Name).dll"
+
+    if (-not $SkipAssemblyBuild) {
+        Write-Host "Building $($assembly.Name)..."
+        # Out-Host, not the pipeline: this script returns the zip paths, and anything else
+        # that reaches the pipeline ends up bundled in with them.
+        & dotnet build $project -c Release -v quiet --nologo | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "$($assembly.Name) failed to build." }
+    }
+
+    if (-not (Test-Path $dll)) {
+        throw "$($assembly.Name) not found at $dll. Run without -SkipAssemblyBuild."
+    }
+
+    # Read rather than declared: the token in the metadata has to be the one the DLL is
+    # actually signed with, and asking the file is the only way to be sure of that.
+    $token = -join ([Reflection.AssemblyName]::GetAssemblyName($dll).GetPublicKeyToken() |
+        ForEach-Object { $_.ToString('x2') })
+    if (-not $token) {
+        throw "$($assembly.Name) is not strong named. Sandbox isolation requires it."
+    }
+
+    $typeIds = @{}
+    foreach ($type in $assembly.Types) {
+        $typeIds[$type.Name] = Get-TypeId $assembly $type
+    }
+
+    $folder = Get-AssemblyFolder $assembly
+    $built[$assembly.Name] = [pscustomobject]@{
+        Dll      = $dll
+        Token    = $token
+        FullName = Get-AssemblyFullName $assembly $token
+        TypeIds  = $typeIds
+        Folder   = $folder
+        # The path inside the zip, which FileName has to point at and the pack is checked
+        # against. Forward slashes both times; a zip has no other kind.
+        ZipPath  = ($folder -replace '\\', '/') + "/$($assembly.Name).dll"
+    }
 }
 
 # ---------------------------------------------------------------- environment lookups
 
+$allSteps = Get-AllSteps $manifest
+
 Write-Host 'Resolving message ids...'
-$wanted = $manifest.Steps.Message | Sort-Object -Unique
+$wanted = $allSteps.Step.Message | Sort-Object -Unique
 $fetchFile = Join-Path $obj 'messages.fetch.xml'
 Set-Content -Path $fetchFile -Encoding UTF8 -Value @"
 <fetch>
@@ -122,7 +162,7 @@ foreach ($name in $wanted) { $messageIds[$name] = Get-IdByName -Output $rows -Na
 # The schema carries impersonation as ImpersonatingUserIdName, so what is needed is the
 # user's full name - which is also exactly what the documenter reads back and prints.
 $impersonatedUserName = $null
-if ($manifest.Steps | Where-Object { $_.ContainsKey('Impersonate') -and $_.Impersonate }) {
+if ($allSteps | Where-Object { Get-StepValue $_.Step 'Impersonate' $false }) {
     $who = Invoke-Pac (@('env', 'who') + $envArgs)
     $line = $who | Where-Object { $_ -match 'User ID:\s+([0-9a-fA-F-]{36})' }
     if (-not $line) { throw 'Could not read the signed in user id from pac env who.' }
@@ -152,17 +192,54 @@ if ($manifest.Steps | Where-Object { $_.ContainsKey('Impersonate') -and $_.Imper
     Write-Host "Impersonating step will run as '$impersonatedUserName'."
 }
 
+# ---------------------------------------------------------------- assembly metadata
+
+function New-AssemblyDataXml {
+    param([hashtable] $Assembly)
+
+    $info = $built[$Assembly.Name]
+
+    $xml = New-Object System.Text.StringBuilder
+    [void]$xml.AppendLine('<?xml version="1.0" encoding="utf-8"?>')
+    [void]$xml.AppendLine("<PluginAssembly FullName=`"$(ConvertTo-XmlText $info.FullName)`" PluginAssemblyId=`"{$(Get-AssemblyId $Assembly)}`" CustomizationLevel=`"1`">")
+    [void]$xml.AppendLine('  <Description>Empty plugins used by the Plugin Documenter end to end suite.</Description>')
+    [void]$xml.AppendLine('  <IsolationMode>2</IsolationMode>')
+    [void]$xml.AppendLine('  <SourceType>0</SourceType>')
+    [void]$xml.AppendLine('  <IntroducedVersion>1.0</IntroducedVersion>')
+    [void]$xml.AppendLine('  <IsCustomizable>1</IsCustomizable>')
+    [void]$xml.AppendLine("  <FileName>/$($info.ZipPath)</FileName>")
+    [void]$xml.AppendLine('  <PluginTypes>')
+
+    foreach ($type in $Assembly.Types) {
+        $qualified = "$($type.Name), $($info.FullName)"
+        # Unbraced ids here, which is how the server writes them back out on export.
+        [void]$xml.AppendLine("    <PluginType Name=`"$(ConvertTo-XmlText $type.Name)`" AssemblyQualifiedName=`"$(ConvertTo-XmlText $qualified)`" PluginTypeId=`"{$($info.TypeIds[$type.Name])}`">")
+        $description = Get-StepValue $type 'Description'
+        if ($description) {
+            [void]$xml.AppendLine("      <Description>$(ConvertTo-XmlText $description)</Description>")
+        }
+        [void]$xml.AppendLine("      <FriendlyName>$(ConvertTo-XmlText (Get-FriendlyName $Assembly $type.Name))</FriendlyName>")
+        [void]$xml.AppendLine('    </PluginType>')
+    }
+
+    [void]$xml.AppendLine('  </PluginTypes>')
+    [void]$xml.AppendLine('</PluginAssembly>')
+    $xml.ToString()
+}
+
 # ---------------------------------------------------------------- step xml
 
 function New-StepXml {
-    param([hashtable] $Step)
+    param([hashtable] $Assembly, [hashtable] $Step)
 
+    $info = $built[$Assembly.Name]
     $typeName = $Step.Type
-    if (-not $typeIds.ContainsKey($typeName)) {
-        throw "$typeName is in registrations.psd1 but not in TestPlugins.dll.data.xml."
+    if (-not $info.TypeIds.ContainsKey($typeName)) {
+        throw "$typeName has a step in $($Assembly.Name) but is not in that assembly's Types."
     }
 
-    $stepId = Get-StepId $Step
+    $typeId = $info.TypeIds[$typeName]
+    $stepId = Get-StepId $Assembly $Step
     $entity = Get-StepEntity $Step
     $name = Get-StepName $Step
 
@@ -178,8 +255,10 @@ function New-StepXml {
     $xml = New-Object System.Text.StringBuilder
     [void]$xml.AppendLine('<?xml version="1.0" encoding="utf-8"?>')
     [void]$xml.AppendLine("<SdkMessageProcessingStep SdkMessageProcessingStepId=`"{$stepId}`" Name=`"$(ConvertTo-XmlText $name)`">")
-    [void]$xml.AppendLine("  <PluginTypeName>$(ConvertTo-XmlText ($typeName + $qualifier))</PluginTypeName>")
-    [void]$xml.AppendLine("  <PluginTypeId>$($typeIds[$typeName])</PluginTypeId>")
+    # Qualified by the assembly, which is what tells two registrations of the same type
+    # name - Shared.Twin is in two assemblies - apart.
+    [void]$xml.AppendLine("  <PluginTypeName>$(ConvertTo-XmlText ($typeName + ', ' + $info.FullName))</PluginTypeName>")
+    [void]$xml.AppendLine("  <PluginTypeId>$typeId</PluginTypeId>")
 
     # "none" is how Dataverse stores "no entity" on the filter, but the importer resolves
     # PrimaryEntity through the metadata cache, where there is no entity called none. A
@@ -211,7 +290,7 @@ function New-StepXml {
     [void]$xml.AppendLine("  <Mode>$($Step.Mode)</Mode>")
     [void]$xml.AppendLine("  <Rank>$($Step.Rank)</Rank>")
     [void]$xml.AppendLine("  <SdkMessageId>$($messageIds[$Step.Message])</SdkMessageId>")
-    [void]$xml.AppendLine("  <EventHandler>$($typeIds[$typeName])</EventHandler>")
+    [void]$xml.AppendLine("  <EventHandler>$typeId</EventHandler>")
     [void]$xml.AppendLine('  <EventHandlerTypeCode>4602</EventHandlerTypeCode>')
     [void]$xml.AppendLine("  <Stage>$($Step.Stage)</Stage>")
     [void]$xml.AppendLine('  <IsCustomizable>1</IsCustomizable>')
@@ -230,7 +309,7 @@ function New-StepXml {
         [void]$xml.AppendLine('  <SdkMessageProcessingStepImages>')
         for ($i = 0; $i -lt $images.Count; $i++) {
             $image = $images[$i]
-            $imageId = Get-ImageId $Step ($i + 1)
+            $imageId = Get-ImageId $Assembly $Step ($i + 1)
             $attributes = Get-StepValue $image 'Attributes'
             $property = Get-StepValue $image 'Property' 'Target'
 
@@ -253,68 +332,97 @@ function New-StepXml {
 
 # ---------------------------------------------------------------- packing
 
+$template = Get-Content (Join-Path $root 'solution\Solution.template.xml') -Raw
+
 function New-FixtureSolution {
     param(
-        [string] $UniqueName,
-        [string] $Title,
-        [hashtable[]] $Steps,
-        # Only the main solution owns the assembly. The companion just registers steps
-        # against the plugin types the main solution already installed.
-        [switch] $WithAssembly
+        [hashtable] $Solution,
+        # The assemblies this solution owns. The companion owns none: it only registers
+        # steps against plugin types another solution already installed.
+        [hashtable[]] $Assemblies,
+        # Each entry pairs a step with the assembly it belongs to.
+        [object[]] $Steps
     )
 
-    $stage = Join-Path $obj "src-$UniqueName"
+    $publisher = $manifest.Publishers[$Solution.Publisher]
+    if (-not $publisher) {
+        throw "Solution $($Solution.Name) names publisher '$($Solution.Publisher)', which is not in Publishers."
+    }
+
+    $stage = Join-Path $obj "src-$($Solution.Name)"
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
     Copy-Item (Join-Path $root 'solution\src\*') $stage -Recurse -Force
 
-    if ($WithAssembly) {
-        Copy-Item $assembly (Join-Path $stage $assemblyFolder) -Force
-    } else {
-        Remove-Item (Join-Path $stage 'PluginAssemblies') -Recurse -Force
-    }
-
-    $stepFolder = Join-Path $stage 'SdkMessageProcessingSteps'
-    New-Item -ItemType Directory -Path $stepFolder -Force | Out-Null
-
     $rootComponents = New-Object System.Text.StringBuilder
-    foreach ($step in $Steps) {
-        $fileName = '{0}-{1}.xml' -f $step.Id, ($step.Type -replace '^TestPlugins\.', '')
-        Set-Content -Path (Join-Path $stepFolder $fileName) -Value (New-StepXml $step) -Encoding UTF8 -NoNewline
+
+    foreach ($assembly in $Assemblies) {
+        $info = $built[$assembly.Name]
+        $folder = Join-Path $stage $info.Folder
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        Copy-Item $info.Dll $folder -Force
+        Set-Content -Path (Join-Path $folder "$($assembly.Name).dll.data.xml") `
+            -Value (New-AssemblyDataXml $assembly) -Encoding UTF8 -NoNewline
+
+        # Both identifiers, because the two halves of the toolchain disagree:
+        # SolutionPackager validates the assembly root component by id, the server matches
+        # it by schema name.
         [void]$rootComponents.AppendLine(
-            "      <RootComponent type=`"92`" id=`"{$(Get-StepId $step)}`" behavior=`"0`" />")
+            "      <RootComponent type=`"91`" id=`"{$(Get-AssemblyId $assembly)}`" schemaName=`"$(ConvertTo-XmlText $info.FullName)`" behavior=`"0`" />")
     }
 
-    $solutionFile = Join-Path $stage 'Other\Solution.xml'
-    $solution = Get-Content $solutionFile -Raw
+    if ($Steps.Count -gt 0) {
+        $stepFolder = Join-Path $stage 'SdkMessageProcessingSteps'
+        New-Item -ItemType Directory -Path $stepFolder -Force | Out-Null
 
-    $marker = '<!-- STEP-ROOT-COMPONENTS: one type="92" entry per step in registrations.psd1, written by build.ps1. -->'
-    if (-not $solution.Contains($marker)) {
-        throw 'Solution.xml no longer carries the RootComponents marker build.ps1 writes into.'
+        foreach ($entry in $Steps) {
+            # The block keeps file names unique: step ids only run unique within an assembly.
+            $fileName = '{0}{1}-{2}.xml' -f $entry.Assembly.Block, $entry.Step.Id,
+                (Get-FriendlyName $entry.Assembly $entry.Step.Type)
+            Set-Content -Path (Join-Path $stepFolder $fileName) `
+                -Value (New-StepXml $entry.Assembly $entry.Step) -Encoding UTF8 -NoNewline
+            [void]$rootComponents.AppendLine(
+                "      <RootComponent type=`"92`" id=`"{$(Get-StepId $entry.Assembly $entry.Step)}`" behavior=`"0`" />")
+        }
     }
-    $solution = $solution.Replace('      ' + $marker, $rootComponents.ToString().TrimEnd())
 
-    if (-not $WithAssembly) {
-        $solution = $solution -replace '(?m)^\s*<RootComponent type="91".*\r?\n', ''
+    $tokens = [ordered]@{
+        '{{SolutionUniqueName}}'         = $Solution.Name
+        '{{SolutionTitle}}'              = ConvertTo-XmlText $Solution.Title
+        '{{PublisherUniqueName}}'        = $publisher.UniqueName
+        '{{PublisherName}}'              = ConvertTo-XmlText $publisher.Name
+        '{{PublisherPrefix}}'            = $publisher.Prefix
+        '{{PublisherOptionValuePrefix}}' = $publisher.OptionValuePrefix
+        '{{RootComponents}}'             = $rootComponents.ToString().TrimEnd()
     }
 
-    $solution = $solution.Replace("<UniqueName>$($manifest.SolutionName)</UniqueName>", "<UniqueName>$UniqueName</UniqueName>")
-    $solution = $solution.Replace('description="Plugin Documenter E2E Fixtures"', "description=`"$(ConvertTo-XmlText $Title)`"")
-    Set-Content -Path $solutionFile -Value $solution -Encoding UTF8 -NoNewline
+    $solutionXml = $template
+    foreach ($token in $tokens.Keys) {
+        $solutionXml = $solutionXml.Replace($token, $tokens[$token])
+    }
 
-    $zip = Join-Path $obj "$UniqueName.zip"
-    Write-Host "Packing $($Steps.Count) step(s) into $UniqueName.zip..."
+    if ($solutionXml -match '\{\{') {
+        throw "Solution.template.xml still has an unreplaced token after building $($Solution.Name)."
+    }
+
+    Set-Content -Path (Join-Path $stage 'Other\Solution.xml') -Value $solutionXml -Encoding UTF8 -NoNewline
+
+    $zip = Join-Path $obj "$($Solution.Name).zip"
+    Write-Host "Packing $($Assemblies.Count) assembly/assemblies and $($Steps.Count) step(s) into $($Solution.Name).zip..."
     Invoke-Pac @('solution', 'pack', '--zipfile', $zip, '--folder', $stage, '--packagetype', 'Managed') | Out-Null
 
-    # SolutionPackager only carries the assembly into the zip if it could make sense of the
+    # SolutionPackager only carries an assembly into the zip if it could make sense of the
     # metadata, and says nothing when it could not - the import is then what fails, with a
     # NullReferenceException that names nothing. Catch it here instead.
-    if ($WithAssembly) {
+    if ($Assemblies.Count -gt 0) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $archive = [IO.Compression.ZipFile]::OpenRead($zip)
         try {
-            if (-not ($archive.Entries | Where-Object { $_.FullName -eq $assemblyPath })) {
-                throw "SolutionPackager left $assemblyPath out of $zip. Check TestPlugins.dll.data.xml against the solution file schema."
+            foreach ($assembly in $Assemblies) {
+                $path = $built[$assembly.Name].ZipPath
+                if (-not ($archive.Entries | Where-Object { $_.FullName -eq $path })) {
+                    throw "SolutionPackager left $path out of $zip. Check the generated $($assembly.Name).dll.data.xml against the solution file schema."
+                }
             }
         } finally {
             $archive.Dispose()
@@ -324,16 +432,23 @@ function New-FixtureSolution {
     $zip
 }
 
-$enabled  = @($manifest.Steps | Where-Object { -not (Get-StepValue $_ 'Disabled' $false) })
-$disabled = @($manifest.Steps | Where-Object { Get-StepValue $_ 'Disabled' $false })
+$main = @()
+foreach ($solution in $manifest.Solutions) {
+    $assemblies = @($manifest.Assemblies | Where-Object { $_.Solution -eq $solution.Name })
+    if ($assemblies.Count -eq 0) {
+        throw "Solution $($solution.Name) has no assemblies."
+    }
 
-$main = New-FixtureSolution -UniqueName $manifest.SolutionName -WithAssembly `
-    -Title 'Plugin Documenter E2E Fixtures' -Steps $enabled
+    $steps = @($allSteps |
+        Where-Object { $_.Assembly.Solution -eq $solution.Name -and -not (Get-StepValue $_.Step 'Disabled' $false) })
+
+    $main += New-FixtureSolution -Solution $solution -Assemblies $assemblies -Steps $steps
+}
 
 $companion = $null
+$disabled = @($allSteps | Where-Object { Get-StepValue $_.Step 'Disabled' $false })
 if ($disabled.Count -gt 0) {
-    $companion = New-FixtureSolution -UniqueName $manifest.DisabledSolutionName `
-        -Title 'Plugin Documenter E2E Fixtures (steps left disabled)' -Steps $disabled
+    $companion = New-FixtureSolution -Solution $manifest.DisabledSolution -Assemblies @() -Steps $disabled
 }
 
 [pscustomobject]@{

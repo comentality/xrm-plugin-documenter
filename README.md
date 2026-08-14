@@ -164,12 +164,15 @@ These come from the Xrm Tools attribute model, not from this tool.
 
 ## Testing
 
-`tests/` holds an end to end suite: a dozen empty plugin classes registered every way this
-tool has to describe, driven entirely by `pac`.
+`tests/` holds an end to end suite: five assemblies of empty plugin classes, under two
+publishers, registered every way this tool has to describe, driven entirely by `pac`.
+Several assemblies rather than one because that is where the interesting failures live -
+a class name that is not unique across a source tree, an assembly whose source is missing,
+an assembly named Microsoft that is nothing of the sort.
 
 ```powershell
 cd tests
-.\register.ps1      # build the assembly, pack two solutions, import them
+.\register.ps1      # build the assemblies, pack three solutions, import them
 .\verify.ps1        # confirm the environment matches the test matrix
 .\unregister.ps1    # take it all away again
 .\xtb.ps1           # build the tool and open it in an XrmToolBox of its own

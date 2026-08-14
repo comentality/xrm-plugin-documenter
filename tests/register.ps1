@@ -5,12 +5,15 @@
 .DESCRIPTION
     Builds the fixture solutions and imports them:
 
-      PluginDocumenterE2E          the assembly, its plugin types and every enabled step,
-                                   imported with --activate-plugins
+      PluginDocumenterE2E          publisher Comentality: TestPlugins, its plugin types
+                                   and every enabled step, imported with --activate-plugins
+      PluginDocumenterE2EContoso   publisher Contoso: the four Contoso assemblies and
+                                   their steps, also with --activate-plugins
       PluginDocumenterE2EDisabled  the steps that are meant to stay switched off,
                                    imported without it
 
-    Both are managed, so unregister.ps1 can take them away again completely.
+    All three are managed, so unregister.ps1 can take them away again completely. The
+    companion goes last because its steps run against plugin types the others install.
 
     Safe to run repeatedly: importing the same solution again updates it in place.
 
@@ -48,12 +51,15 @@ function Import-Fixture {
     }
 }
 
-Import-Fixture -Path $zips.Main -Activate
+foreach ($zip in $zips.Main) {
+    Import-Fixture -Path $zip -Activate
+}
+
 if ($zips.Companion) {
     Import-Fixture -Path $zips.Companion
 }
 
 Write-Host ''
-Write-Host 'Registered. Point the Plugin Documenter at the TestPlugins assembly and the folder:'
-Write-Host "  $(Join-Path $root 'TestPlugins')"
+Write-Host 'Registered. Point the Plugin Documenter at the source folder:'
+Write-Host "  $(Join-Path $root 'src')"
 Write-Host 'Run verify.ps1 to confirm the environment matches registrations.psd1.'
