@@ -50,12 +50,17 @@ namespace PluginDocumenter
         /// </summary>
         private Timer _checkSettled;
 
+        /// <summary>
+        /// The preview redraws itself from whatever is ticked, and colouring it costs a pass over
+        /// the whole buffer, so a run of ticks waits for its own end the same way.
+        /// </summary>
+        private Timer _previewSettled;
+
         private Panel _toolbar;
         private TextBox _txtFolder;
         private Button _btnBrowse;
         private RadioButton _rbAttributes;
         private RadioButton _rbComment;
-        private Button _btnPreview;
         private Button _btnWrite;
         private Button _btnCreateDefinitions;
         private RichTextBox _txtPreview;
@@ -162,6 +167,13 @@ namespace PluginDocumenter
                 LoadCheckedTypes();
             };
 
+            _previewSettled = new Timer { Interval = 120 };
+            _previewSettled.Tick += (s, e) =>
+            {
+                _previewSettled.Stop();
+                RenderPreview();
+            };
+
             _leftSplit.Panel1.Controls.Add(_lvAssemblies);
             _leftSplit.Panel1.Controls.Add(leftToolbar);
 
@@ -199,7 +211,7 @@ namespace PluginDocumenter
                 Width = 150,
                 Checked = true
             };
-            _rbAttributes.CheckedChanged += (s, e) => OutputModeChanged();
+            _rbAttributes.CheckedChanged += (s, e) => UpdateButtonState();
             _rbComment = new RadioButton
             {
                 Text = "Readable summary comment",
@@ -207,18 +219,16 @@ namespace PluginDocumenter
                 Width = 190
             };
 
-            _btnPreview = new Button { Text = "Preview Attributes", Location = new Point(5, 64), Width = 130, Height = 26, Enabled = false };
-            _btnPreview.Click += BtnPreview_Click;
-            _btnWrite = new Button { Text = "Write to Files", Location = new Point(140, 64), Width = 110, Height = 26, Enabled = false };
+            _btnWrite = new Button { Text = "Write to Files", Location = new Point(5, 64), Width = 110, Height = 26, Enabled = false };
             _btnWrite.Click += BtnWrite_Click;
-            _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Location = new Point(255, 64), Width = 210, Height = 26, Enabled = false };
+            _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Location = new Point(120, 64), Width = 210, Height = 26, Enabled = false };
             _btnCreateDefinitions.Click += BtnCreateDefinitions_Click;
 
             _toolbar.Controls.AddRange(new Control[]
             {
                 lblFolder, _txtFolder, _btnBrowse,
                 lblOutput, _rbAttributes, _rbComment,
-                _btnPreview, _btnWrite, _btnCreateDefinitions
+                _btnWrite, _btnCreateDefinitions
             });
 
             _txtPreview = new RichTextBox
@@ -238,7 +248,11 @@ namespace PluginDocumenter
             _mainSplit.Panel2.Controls.Add(_toolbar);
 
             Controls.Add(_mainSplit);
-            Load += (s, e) => SetInitialSplit();
+            Load += (s, e) =>
+            {
+                SetInitialSplit();
+                RenderPreview();
+            };
             ResumeLayout(false);
         }
 
@@ -492,12 +506,15 @@ namespace PluginDocumenter
             var hasChecked = _lvTypes.CheckedItems.Count > 0;
             var hasFolder = _txtFolder.Text.Trim().Length > 0 && Directory.Exists(_txtFolder.Text.Trim());
 
-            _btnPreview.Enabled = hasChecked;
             _btnWrite.Enabled = hasChecked && hasFolder;
             // A comment needs no attribute definitions to compile against.
             _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked;
 
             UpdateStatus();
+
+            // Whatever is ticked is what the preview shows, so nothing has to be asked for.
+            _previewSettled.Stop();
+            _previewSettled.Start();
         }
 
         /// <summary>
@@ -539,12 +556,6 @@ namespace PluginDocumenter
                 + (empty == 0 ? string.Empty : " · " + empty + " with no steps");
         }
 
-        private void OutputModeChanged()
-        {
-            _btnPreview.Text = _rbAttributes.Checked ? "Preview Attributes" : "Preview Comment";
-            UpdateButtonState();
-        }
-
         /// <summary>
         /// The two outputs are independent in the file: whichever mode is off returns null,
         /// which tells <see cref="CodeFileWriter"/> to leave what is already there alone.
@@ -573,13 +584,24 @@ namespace PluginDocumenter
             }
         }
 
-        private void BtnPreview_Click(object sender, EventArgs e)
+        /// <summary>
+        /// Shows what the checked classes would be given, in the mode that is selected. Run
+        /// whenever either of those changes, so the pane is the answer rather than a request.
+        /// </summary>
+        private void RenderPreview()
         {
+            var types = CheckedTypes();
+            if (types.Count == 0)
+            {
+                CsSyntaxHighlighter.Plain(_txtPreview, "Tick the classes on the left to see what they would be given.");
+                return;
+            }
+
             var names = _assemblies.ToDictionary(a => a.Id, a => a.Name);
             var assembly = Guid.Empty;
 
             var sb = new StringBuilder();
-            foreach (var type in CheckedTypes())
+            foreach (var type in types)
             {
                 // With a class per assembly the type names alone read as one long list of
                 // strangers, so each assembly announces itself once.

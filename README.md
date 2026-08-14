@@ -23,7 +23,8 @@ against the modern attribute model.
 2. Ticking one — or **All** of them, for a project that ships an assembly per plugin —
    loads every plugin type that has at least one registered step, grouped by assembly.
 3. **Write** chooses the output: *Xrm Tools attributes* or a *readable summary comment*.
-4. **Preview** shows exactly what would be written.
+4. The preview pane shows exactly what would be written, and follows the ticks and the
+   mode as you change them.
 5. **Write to Files** finds the `.cs` file declaring each class and splices the output
    in above the class declaration.
 6. **Create Attribute Definitions File** drops a dependency-free
