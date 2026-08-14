@@ -6,3 +6,5 @@ obj/
 .claude/
 .nuget-apikey
 artifacts/
+# The documenter leaves one of these beside every file it rewrites, including the fixtures.
+*.bak

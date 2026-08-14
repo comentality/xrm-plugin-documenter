@@ -143,6 +143,22 @@ These come from the Xrm Tools attribute model, not from this tool.
 .\publish.ps1   # build Release, pack, and push to NuGet.org
 ```
 
+## Testing
+
+`tests/` holds an end to end suite: a dozen empty plugin classes registered every way this
+tool has to describe, driven entirely by `pac`.
+
+```powershell
+cd tests
+.\register.ps1      # build the assembly, pack two solutions, import them
+.\verify.ps1        # confirm the environment matches the test matrix
+.\unregister.ps1    # take it all away again
+```
+
+Then run the tool against that environment and compare what it writes with the expected
+output in [tests/README.md](tests/README.md), which spells out, class by class, exactly
+what both output modes should produce.
+
 ## License
 
 MIT

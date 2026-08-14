@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Element order matches the template SolutionPackagerLib carries internally. The importer
+  is not forgiving about it: with SolutionPluginAssemblies in the wrong place it dies in
+  GetPluginAssembliesTable with a bare NullReferenceException.
+
+  build.ps1 replaces the empty SolutionPluginAssemblies element with the real one, base64
+  assembly included, and SolutionPackager fills SdkMessageProcessingSteps from the
+  SdkMessageProcessingSteps folder.
+-->
+<ImportExportXml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Entities />
+  <Roles />
+  <Workflows />
+  <FieldSecurityProfiles />
+  <Templates />
+  <EntityMaps />
+  <EntityRelationships />
+  <OrganizationSettings />
+  <optionsets />
+  <CustomControls />
+  <AppModuleSiteMaps />
+  <AppModules />
+  <EntityDataProviders />
+  <CanvasApps />
+  <SolutionPluginAssemblies />
+  <SdkMessageProcessingSteps />
+  <connectionreferences />
+  <Languages>
+    <Language>1033</Language>
+  </Languages>
+</ImportExportXml>
