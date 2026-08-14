@@ -23,19 +23,23 @@ namespace PluginDocumenter.Logic
         /// recognise a block this tool owns and may replace.</summary>
         public const string Marker = "Register:";
 
+        /// <summary>Stands in for the column list when there is none. Bracketed, so it reads as
+        /// a remark about the list rather than as a name in it.</summary>
+        private const string AllColumns = "(all columns)";
+
         public static IEnumerable<string> Emit(PluginTypeInfo type)
         {
             var lines = new List<string> { "/// <remarks>", "/// " + Marker };
 
             foreach (var step in type.Steps)
             {
-                lines.AddRange(Compose(string.Empty, StepHeader(step), List(step.FilteringAttributes)));
+                lines.AddRange(Compose(string.Empty, StepHeader(step), StepColumns(step)));
                 foreach (var image in step.Images)
                 {
                     // No attributes on an image means every column, which Microsoft
                     // explicitly calls out as bad practice. Worth saying out loud.
                     lines.AddRange(Compose("    ", ImageName(image.ImageType),
-                        string.IsNullOrWhiteSpace(image.Attributes) ? "(all columns)" : List(image.Attributes)));
+                        string.IsNullOrWhiteSpace(image.Attributes) ? AllColumns : List(image.Attributes)));
                 }
             }
 
@@ -71,6 +75,26 @@ namespace PluginDocumenter.Logic
             return Mode(step.Mode) + " " + Stage(step.Stage) + "-" + step.MessageName
                    + (hasEntity ? " of " + entity : string.Empty)
                    + " (" + string.Join(", ", facts) + ")";
+        }
+
+        /// <summary>
+        /// A step with no filtering attributes fires on every column, so say that rather than
+        /// leaving the reader to infer it from a missing list. Only where columns are part of
+        /// the message though: Dataverse filters <c>Update</c> and <c>Create</c>, and on a
+        /// <c>Delete</c> or a global message there is nothing to have filtered.
+        /// </summary>
+        private static string StepColumns(PluginStepInfo step)
+        {
+            var list = List(step.FilteringAttributes);
+            if (list.Length > 0)
+            {
+                return list;
+            }
+
+            return string.Equals(step.MessageName, "Update", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(step.MessageName, "Create", StringComparison.OrdinalIgnoreCase)
+                ? AllColumns
+                : string.Empty;
         }
 
         /// <summary>

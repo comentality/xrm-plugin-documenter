@@ -90,7 +90,8 @@ to the nearest preceding `[Step]`, so that order is load bearing.
 ### SimpleCreate
 
 Everything at its default, so everything optional is suppressed: rank 1, the step name
-Dataverse generated, no filter, no description.
+Dataverse generated, no description. No filter either, which on `Create` means every column
+and is said so rather than left blank.
 
 ```csharp
 [Plugin]
@@ -99,7 +100,7 @@ Dataverse generated, no filter, no description.
 ```csharp
 /// <remarks>
 /// Register:
-/// Sync Post-Create of account (order 1)
+/// Sync Post-Create of account (order 1): (all columns)
 /// </remarks>
 ```
 
@@ -148,10 +149,14 @@ No primary entity: the constructor overload without one, and a summary line with
 /// Sync PreValidation-Associate (order 1)
 ```
 
+`Associate` has no columns to filter, so the header stands alone where a `Create` or
+`Update` step would say `(all columns)`.
+
 ### ImageShapes
 
 A post image with no columns at all and a message property that is not `Target`; two images
-on one step; and image type 2. Images within a step come out pre before post.
+on one step; and image type 2. Images within a step come out pre before post. None of these
+steps is filtered, so every header carries `(all columns)` too.
 
 ```csharp
 [Plugin]
@@ -164,12 +169,12 @@ on one step; and image type 2. Images within a step come out pre before post.
 [Image(ImageTypes.Both, "name", Name = "Snapshot", EntityAlias = "Snapshot")]
 ```
 ```csharp
-/// Sync Post-Create of account (order 1)
+/// Sync Post-Create of account (order 1): (all columns)
 ///     PostImage: (all columns)
-/// Sync Post-Update of account (order 5)
+/// Sync Post-Update of account (order 5): (all columns)
 ///     PreImage: name, telephone1
 ///     PostImage: name
-/// Sync Post-Update of account (order 7)
+/// Sync Post-Update of account (order 7): (all columns)
 ///     PreImage and PostImage: name
 ```
 
@@ -185,7 +190,7 @@ completely ordinary. `As <name>` is whoever ran `register.ps1`.
 ```
 ```csharp
 /// Sync Pre-Delete of task (order 1, disabled)
-/// Sync Post-Update of task (order 1, As Kosta Koniev)
+/// Sync Post-Update of task (order 1, As Kosta Koniev): (all columns)
 ```
 
 ### EscapedText
@@ -205,7 +210,7 @@ deliberately left out of it - which is also what keeps the doc comment well form
     Configuration = "C:\\path\\to \"somewhere\" & back")]
 ```
 ```csharp
-/// Sync Post-Update of account (order 1)
+/// Sync Post-Update of account (order 1): (all columns)
 ```
 
 ### WideRegistration
@@ -225,14 +230,14 @@ limit is the line width.
 [Step("Update", "contact", Stages.PostOperation, ExecutionMode.Synchronous, ExecutionOrder = 10)]
 ```
 ```csharp
-/// Sync PreValidation-Update of account (order 3)
-/// Sync Pre-Create of account (order 1)
+/// Sync PreValidation-Update of account (order 3): (all columns)
+/// Sync Pre-Create of account (order 1): (all columns)
 /// Sync Pre-Delete of account (order 1)
 /// Sync Post-Update of account (order 1):
 ///     accountcategorycode, accountnumber, address1_city, address1_line1, creditlimit, description,
 ///     emailaddress1, name, telephone1, websiteurl
-/// Async Post-Create of account (order 10)
-/// Sync Post-Update of contact (order 10)
+/// Async Post-Create of account (order 10): (all columns)
+/// Sync Post-Update of contact (order 10): (all columns)
 ```
 
 ### HandWritten
@@ -252,7 +257,7 @@ exists. Afterwards:
     Description = "What the file should end up saying, not what it says now.")]
 ```
 ```csharp
-/// Sync Post-Update of annotation (order 2)
+/// Sync Post-Update of annotation (order 2): (all columns)
 ```
 
 ### Alpha.Duplicate

@@ -101,12 +101,16 @@ left out as noise; the unlabelled list after the colon is the step's filtering a
 which [Dataverse now honours on `Create` as well as
 `Update`](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in).
 
+Nothing that has columns is ever left blank. An unfiltered `Create` or `Update` step, and an
+image with no columns, both read `(all columns)` — bracketed, so it reads as a remark about
+the list rather than as a name in it. For an image that is Microsoft's
+[explicit bad practice](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in)
+rather than a neutral default. Messages that filter nothing — `Delete`, a global message —
+keep their bare header, because there is no column list to have omitted.
+
 Because nothing has to compile, the comment can carry two facts no attribute can express:
 a **disabled** step, and the user a step impersonates (PRT's *Run in User's Context*),
-shown as `As <name>`. Both appear only when they differ from the default. An image with no
-columns is reported as `(all columns)`, which Microsoft
-[explicitly calls out as bad practice](https://learn.microsoft.com/en-us/power-apps/developer/data-platform/register-plug-in)
-rather than a neutral default.
+shown as `As <name>`. Both appear only when they differ from the default.
 
 The tool owns a `<remarks>` block whose first line is `Register:` and replaces it in
 place on later runs. Any other `<remarks>` you have written is left alone.
