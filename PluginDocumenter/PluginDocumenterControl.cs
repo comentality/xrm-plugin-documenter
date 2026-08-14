@@ -58,7 +58,7 @@ namespace PluginDocumenter
         private Button _btnPreview;
         private Button _btnWrite;
         private Button _btnCreateDefinitions;
-        private TextBox _txtPreview;
+        private RichTextBox _txtPreview;
 
         public PluginDocumenterControl()
         {
@@ -221,13 +221,16 @@ namespace PluginDocumenter
                 _btnPreview, _btnWrite, _btnCreateDefinitions
             });
 
-            _txtPreview = new TextBox
+            _txtPreview = new RichTextBox
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
-                ScrollBars = ScrollBars.Both,
+                ScrollBars = RichTextBoxScrollBars.Both,
                 WordWrap = false,
                 ReadOnly = true,
+                // The attribute definitions file carries documentation URLs, and a RichTextBox
+                // left to itself would underline them in its own blue over the colouring.
+                DetectUrls = false,
+                BackColor = Color.White,
                 Font = new Font("Consolas", 9f)
             };
 
@@ -597,7 +600,7 @@ namespace PluginDocumenter
                 sb.AppendLine();
             }
 
-            _txtPreview.Text = sb.ToString();
+            CsSyntaxHighlighter.Apply(_txtPreview, sb.ToString());
         }
 
         private void BtnWrite_Click(object sender, EventArgs e)
@@ -652,7 +655,8 @@ namespace PluginDocumenter
             Report(report, "Ambiguous, several files declare the class", ambiguousTypes);
             Report(report, "Failed", failed);
 
-            _txtPreview.Text = report.ToString();
+            // A tally of what happened to which file, not source, so it is left uncoloured.
+            CsSyntaxHighlighter.Plain(_txtPreview, report.ToString());
             MessageBox.Show(
                 written.Count + " file(s) updated, " + unchanged.Count + " unchanged, "
                 + (notFound.Count + ambiguousTypes.Count + failed.Count) + " skipped."
@@ -698,7 +702,7 @@ namespace PluginDocumenter
             try
             {
                 File.WriteAllText(target, AttributeDefinitions.Source, new UTF8Encoding(true));
-                _txtPreview.Text = AttributeDefinitions.Source;
+                CsSyntaxHighlighter.Apply(_txtPreview, AttributeDefinitions.Source);
                 MessageBox.Show(
                     "Wrote " + target + Environment.NewLine + Environment.NewLine
                     + "Do not also reference the XrmTools.Meta.Attributes NuGet package in this project. "
