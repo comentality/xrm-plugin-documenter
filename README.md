@@ -20,7 +20,8 @@ against the modern attribute model.
 ## What it does
 
 1. **Load Assemblies** lists the custom plugin assemblies in the connected environment.
-2. Selecting one loads every plugin type that has at least one registered step.
+2. Ticking one — or **All** of them, for a project that ships an assembly per plugin —
+   loads every plugin type that has at least one registered step, grouped by assembly.
 3. **Write** chooses the output: *Xrm Tools attributes* or a *readable summary comment*.
 4. **Preview** shows exactly what would be written.
 5. **Write to Files** finds the `.cs` file declaring each class and splices the output
@@ -30,6 +31,19 @@ against the modern attribute model.
    without the NuGet package or the Visual Studio extension.
 
 Every file that changes gets a timestamped `.bak` copy beside it.
+
+### Finding your assemblies among Microsoft's
+
+An environment carries dozens of first party assemblies and a handful of yours, so
+Microsoft's are held back by default, with the count on the switch that brings them back.
+They are told apart by their **strong name signature**, not their name: plugin assemblies
+must be signed, `31bf3856ad364e35` is a key nobody outside Microsoft can sign with, and it
+covers Power Pages, Field Service and the rest of the optional apps whatever they call
+themselves and whichever of Microsoft's several publishers shipped them.
+
+An ISV's app is neither Microsoft's nor yours, and no test will ever say so. That is what
+the **Filter** box is for: type your own name and the list is yours. Filtering only hides
+rows, it never unticks one, so you can narrow the list, tick **All**, and clear it again.
 
 ## Output
 

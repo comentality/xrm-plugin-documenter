@@ -20,7 +20,7 @@ namespace PluginDocumenter.Logic
         {
             var query = new QueryExpression("pluginassembly")
             {
-                ColumnSet = new ColumnSet("pluginassemblyid", "name", "isolationmode"),
+                ColumnSet = new ColumnSet("pluginassemblyid", "name", "isolationmode", "publickeytoken"),
                 Criteria =
                 {
                     // Internal plumbing the platform registers for itself. Steps on these are not
@@ -38,18 +38,24 @@ namespace PluginDocumenter.Logic
                 {
                     Id = e.Id,
                     Name = e.GetAttributeValue<string>("name"),
+                    PublicKeyToken = e.GetAttributeValue<string>("publickeytoken"),
                     IsolationMode = GetOptionSet(e, "isolationmode", 2)
                 })
                 .ToList();
         }
 
         /// <summary>
-        /// Returns every plugin type in the assembly that has at least one registered step,
+        /// Returns every plugin type in the given assemblies that has at least one registered step,
         /// with its steps and each step's images attached.
+        ///
+        /// Several assemblies at once, because a project that ships one assembly per plugin has as
+        /// many assemblies as another has classes, and documenting it one assembly at a time is not
+        /// a workflow. The work per assembly is the same either way: the ids are batched into the
+        /// same three queries.
         /// </summary>
-        public static List<PluginTypeInfo> GetPluginTypes(IOrganizationService service, Guid assemblyId)
+        public static List<PluginTypeInfo> GetPluginTypes(IOrganizationService service, IList<Guid> assemblyIds)
         {
-            var types = GetTypes(service, assemblyId);
+            var types = GetTypes(service, assemblyIds);
             if (types.Count == 0)
             {
                 return types;
@@ -96,24 +102,23 @@ namespace PluginDocumenter.Logic
             return types.Where(t => t.Steps.Count > 0).OrderBy(t => t.TypeName).ToList();
         }
 
-        private static List<PluginTypeInfo> GetTypes(IOrganizationService service, Guid assemblyId)
+        private static List<PluginTypeInfo> GetTypes(IOrganizationService service, IList<Guid> assemblyIds)
         {
-            var query = new QueryExpression("plugintype")
+            return Retrieve(service, assemblyIds, ids => new QueryExpression("plugintype")
             {
-                ColumnSet = new ColumnSet("plugintypeid", "typename", "friendlyname", "description"),
+                ColumnSet = new ColumnSet("plugintypeid", "typename", "friendlyname", "description", "pluginassemblyid"),
                 Criteria =
                 {
                     Conditions =
                     {
-                        new ConditionExpression("pluginassemblyid", ConditionOperator.Equal, assemblyId)
+                        new ConditionExpression("pluginassemblyid", ConditionOperator.In, ids)
                     }
                 }
-            };
-
-            return service.RetrieveMultiple(query).Entities
+            })
                 .Select(e => new PluginTypeInfo
                 {
                     Id = e.Id,
+                    AssemblyId = GetLookupId(e, "pluginassemblyid"),
                     TypeName = e.GetAttributeValue<string>("typename"),
                     FriendlyName = e.GetAttributeValue<string>("friendlyname"),
                     Description = e.GetAttributeValue<string>("description")
@@ -123,6 +128,30 @@ namespace PluginDocumenter.Logic
 
         /// <summary>Returns each step paired with the id of the plugin type it belongs to.</summary>
         private static List<KeyValuePair<PluginStepInfo, Guid>> GetSteps(IOrganizationService service, List<Guid> typeIds)
+        {
+            return Retrieve(service, typeIds, ids => BuildStepQuery(ids))
+                .Select(e => new KeyValuePair<PluginStepInfo, Guid>(
+                    new PluginStepInfo
+                    {
+                        Id = e.Id,
+                        Name = e.GetAttributeValue<string>("name"),
+                        Stage = GetOptionSet(e, "stage", 40),
+                        Mode = GetOptionSet(e, "mode", 0),
+                        Rank = e.GetAttributeValue<int?>("rank") ?? 1,
+                        FilteringAttributes = e.GetAttributeValue<string>("filteringattributes"),
+                        Configuration = e.GetAttributeValue<string>("configuration"),
+                        Description = e.GetAttributeValue<string>("description"),
+                        AsyncAutoDelete = e.GetAttributeValue<bool?>("asyncautodelete") ?? false,
+                        IsDisabled = GetOptionSet(e, "statecode", 0) == 1,
+                        MessageName = GetAliased<string>(e, "msg.name"),
+                        PrimaryEntityName = GetAliased<string>(e, "flt.primaryobjecttypecode"),
+                        ImpersonatingUser = GetAliased<string>(e, "usr.fullname")
+                    },
+                    GetLookupId(e, "plugintypeid")))
+                .ToList();
+        }
+
+        private static QueryExpression BuildStepQuery(object[] typeIds)
         {
             var query = new QueryExpression("sdkmessageprocessingstep")
             {
@@ -134,7 +163,7 @@ namespace PluginDocumenter.Logic
                 {
                     Conditions =
                     {
-                        new ConditionExpression("plugintypeid", ConditionOperator.In, typeIds.Cast<object>().ToArray())
+                        new ConditionExpression("plugintypeid", ConditionOperator.In, typeIds)
                     }
                 }
             };
@@ -159,33 +188,13 @@ namespace PluginDocumenter.Logic
             query.LinkEntities.Add(message);
             query.LinkEntities.Add(filter);
             query.LinkEntities.Add(impersonated);
-
-            return service.RetrieveMultiple(query).Entities
-                .Select(e => new KeyValuePair<PluginStepInfo, Guid>(
-                    new PluginStepInfo
-                    {
-                        Id = e.Id,
-                        Name = e.GetAttributeValue<string>("name"),
-                        Stage = GetOptionSet(e, "stage", 40),
-                        Mode = GetOptionSet(e, "mode", 0),
-                        Rank = e.GetAttributeValue<int?>("rank") ?? 1,
-                        FilteringAttributes = e.GetAttributeValue<string>("filteringattributes"),
-                        Configuration = e.GetAttributeValue<string>("configuration"),
-                        Description = e.GetAttributeValue<string>("description"),
-                        AsyncAutoDelete = e.GetAttributeValue<bool?>("asyncautodelete") ?? false,
-                        IsDisabled = GetOptionSet(e, "statecode", 0) == 1,
-                        MessageName = GetAliased<string>(e, "msg.name"),
-                        PrimaryEntityName = GetAliased<string>(e, "flt.primaryobjecttypecode"),
-                        ImpersonatingUser = GetAliased<string>(e, "usr.fullname")
-                    },
-                    e.GetAttributeValue<EntityReference>("plugintypeid").Id))
-                .ToList();
+            return query;
         }
 
         /// <summary>Returns each image paired with the id of the step it belongs to.</summary>
         private static List<KeyValuePair<PluginImageInfo, Guid>> GetImages(IOrganizationService service, List<Guid> stepIds)
         {
-            var query = new QueryExpression("sdkmessageprocessingstepimage")
+            return Retrieve(service, stepIds, ids => new QueryExpression("sdkmessageprocessingstepimage")
             {
                 ColumnSet = new ColumnSet(
                     "sdkmessageprocessingstepimageid", "imagetype", "entityalias",
@@ -194,13 +203,11 @@ namespace PluginDocumenter.Logic
                 {
                     Conditions =
                     {
-                        new ConditionExpression("sdkmessageprocessingstepid", ConditionOperator.In, stepIds.Cast<object>().ToArray())
+                        new ConditionExpression("sdkmessageprocessingstepid", ConditionOperator.In, ids)
                     }
                 },
                 Orders = { new OrderExpression("imagetype", OrderType.Ascending) }
-            };
-
-            return service.RetrieveMultiple(query).Entities
+            })
                 .Select(e => new KeyValuePair<PluginImageInfo, Guid>(
                     new PluginImageInfo
                     {
@@ -210,8 +217,46 @@ namespace PluginDocumenter.Logic
                         Name = e.GetAttributeValue<string>("name"),
                         MessagePropertyName = e.GetAttributeValue<string>("messagepropertyname")
                     },
-                    e.GetAttributeValue<EntityReference>("sdkmessageprocessingstepid").Id))
+                    GetLookupId(e, "sdkmessageprocessingstepid")))
                 .ToList();
+        }
+
+        /// <summary>
+        /// Ids per request. Documenting a whole solution can put thousands of ids in front of these
+        /// queries, and neither an In list nor a single page will take them all, so both are split.
+        /// </summary>
+        private const int IdsPerQuery = 250;
+
+        private static List<Entity> Retrieve(IOrganizationService service, IList<Guid> ids, Func<object[], QueryExpression> build)
+        {
+            var results = new List<Entity>();
+            for (var offset = 0; offset < ids.Count; offset += IdsPerQuery)
+            {
+                var chunk = ids.Skip(offset).Take(IdsPerQuery).Cast<object>().ToArray();
+                var query = build(chunk);
+                query.PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 };
+
+                while (true)
+                {
+                    var page = service.RetrieveMultiple(query);
+                    results.AddRange(page.Entities);
+                    if (!page.MoreRecords)
+                    {
+                        break;
+                    }
+
+                    query.PageInfo.PageNumber++;
+                    query.PageInfo.PagingCookie = page.PagingCookie;
+                }
+            }
+
+            return results;
+        }
+
+        private static Guid GetLookupId(Entity e, string name)
+        {
+            var value = e.GetAttributeValue<EntityReference>(name);
+            return value == null ? Guid.Empty : value.Id;
         }
 
         private static int GetOptionSet(Entity e, string name, int fallback)

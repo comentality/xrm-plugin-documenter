@@ -15,15 +15,40 @@ namespace PluginDocumenter
     public partial class PluginDocumenterControl : PluginControlBase
     {
         private List<AssemblyInfo> _assemblies = new List<AssemblyInfo>();
-        private List<PluginTypeInfo> _types = new List<PluginTypeInfo>();
-        private AssemblyInfo _selectedAssembly;
+
+        /// <summary>Types already fetched, keyed by assembly, so re-checking one costs nothing.</summary>
+        private readonly Dictionary<Guid, List<PluginTypeInfo>> _typesByAssembly = new Dictionary<Guid, List<PluginTypeInfo>>();
+
+        /// <summary>
+        /// The assemblies being documented. Kept apart from the list, which shows only what the
+        /// Microsoft switch and the filter box let through, and outlives both.
+        /// </summary>
+        private readonly HashSet<Guid> _checkedAssemblies = new HashSet<Guid>();
+
+        /// <summary>
+        /// Classes the user took out. Held as the exception rather than the rule, because a class
+        /// arrives checked and has to survive the list being rebuilt around it.
+        /// </summary>
+        private readonly HashSet<Guid> _excludedTypes = new HashSet<Guid>();
+
+        /// <summary>Set while code, not the user, is ticking boxes.</summary>
+        private bool _rendering;
 
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
         private Button _btnLoadAssemblies;
         private CheckBox _chkShowMicrosoft;
+        private TextBox _txtFilter;
+        private CheckBox _chkAllAssemblies;
+        private Label _lblStatus;
         private ListView _lvAssemblies;
         private ListView _lvTypes;
+
+        /// <summary>
+        /// Checking a box fires one event per box, and selecting the whole list fires one per row.
+        /// This waits for the flurry to end so the environment is asked once.
+        /// </summary>
+        private Timer _checkSettled;
 
         private Panel _toolbar;
         private TextBox _txtFolder;
@@ -59,7 +84,7 @@ namespace PluginDocumenter
                 Orientation = Orientation.Horizontal
             };
 
-            var leftToolbar = new Panel { Dock = DockStyle.Top, Height = 36, Padding = new Padding(5) };
+            var leftToolbar = new Panel { Dock = DockStyle.Top, Height = 90, Padding = new Padding(5) };
             _btnLoadAssemblies = new Button { Text = "Load Assemblies", Location = new Point(5, 5), Width = 150, Height = 26 };
             _btnLoadAssemblies.Click += BtnLoadAssemblies_Click;
             _chkShowMicrosoft = new CheckBox
@@ -70,21 +95,72 @@ namespace PluginDocumenter
                 AutoSize = false
             };
             _chkShowMicrosoft.CheckedChanged += (s, e) => RenderAssemblies();
+
+            // No signature test settles every environment, and an ISV's app is not Microsoft's
+            // and not yours either. Typing your own name is the answer that never needs one.
+            var lblFilter = new Label { Text = "Filter:", Location = new Point(5, 39), AutoSize = true };
+            _txtFilter = new TextBox
+            {
+                Location = new Point(50, 36),
+                Width = 251,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+            };
+            _txtFilter.TextChanged += (s, e) => RenderAssemblies();
+
+            // Tri-state, and driven from code only: the user's click means "everything" or
+            // "nothing", never the third thing the box shows when the list is partly ticked.
+            _chkAllAssemblies = new CheckBox
+            {
+                Text = "All",
+                Location = new Point(5, 66),
+                Width = 46,
+                AutoSize = false,
+                AutoCheck = false,
+                Enabled = false
+            };
+            _chkAllAssemblies.Click += (s, e) => CheckAllAssemblies(_chkAllAssemblies.CheckState != CheckState.Checked);
+
+            _lblStatus = new Label
+            {
+                Location = new Point(55, 68),
+                Width = 246,
+                Height = 16,
+                AutoSize = false,
+                AutoEllipsis = true,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                ForeColor = SystemColors.GrayText,
+                Text = "Load the assemblies to start."
+            };
+
             leftToolbar.Controls.Add(_btnLoadAssemblies);
             leftToolbar.Controls.Add(_chkShowMicrosoft);
+            leftToolbar.Controls.Add(lblFilter);
+            leftToolbar.Controls.Add(_txtFilter);
+            leftToolbar.Controls.Add(_chkAllAssemblies);
+            leftToolbar.Controls.Add(_lblStatus);
 
+            // Checked, not selected: a project that ships one assembly per plugin needs all of them
+            // documented in one pass, so the list is a set rather than a pointer at one row.
             _lvAssemblies = new ListView
             {
                 Dock = DockStyle.Fill,
                 View = View.Details,
                 FullRowSelect = true,
-                MultiSelect = false,
+                MultiSelect = true,
+                CheckBoxes = true,
                 HideSelection = false,
                 Font = new Font("Segoe UI", 9f)
             };
             _lvAssemblies.Columns.Add("Assembly", 210);
             _lvAssemblies.Columns.Add("Isolation", 80);
-            _lvAssemblies.SelectedIndexChanged += LvAssemblies_SelectedIndexChanged;
+            _lvAssemblies.ItemChecked += LvAssemblies_ItemChecked;
+
+            _checkSettled = new Timer { Interval = 120 };
+            _checkSettled.Tick += (s, e) =>
+            {
+                _checkSettled.Stop();
+                LoadCheckedTypes();
+            };
 
             _leftSplit.Panel1.Controls.Add(_lvAssemblies);
             _leftSplit.Panel1.Controls.Add(leftToolbar);
@@ -101,7 +177,7 @@ namespace PluginDocumenter
             };
             _lvTypes.Columns.Add("Plugin Class", 210);
             _lvTypes.Columns.Add("Steps", 50);
-            _lvTypes.ItemChecked += (s, e) => UpdateButtonState();
+            _lvTypes.ItemChecked += LvTypes_ItemChecked;
 
             _leftSplit.Panel2.Controls.Add(_lvTypes);
             _mainSplit.Panel1.Controls.Add(_leftSplit);
@@ -159,7 +235,22 @@ namespace PluginDocumenter
             _mainSplit.Panel2.Controls.Add(_toolbar);
 
             Controls.Add(_mainSplit);
+            Load += (s, e) => SetInitialSplit();
             ResumeLayout(false);
+        }
+
+        /// <summary>
+        /// A SplitContainer silently refuses a distance wider than it is, and at construction time
+        /// it is a default sized control, so the lists only get their width once the host has
+        /// handed this one its real size.
+        /// </summary>
+        private void SetInitialSplit()
+        {
+            var widest = _mainSplit.Width - _mainSplit.Panel2MinSize - _mainSplit.SplitterWidth;
+            if (widest > 0)
+            {
+                _mainSplit.SplitterDistance = Math.Min(320, widest);
+            }
         }
 
         private void BtnLoadAssemblies_Click(object sender, EventArgs e)
@@ -182,9 +273,11 @@ namespace PluginDocumenter
                     }
 
                     _assemblies = (List<AssemblyInfo>)result.Result;
-                    _selectedAssembly = null;
+                    _typesByAssembly.Clear();
+                    _checkedAssemblies.Clear();
+                    _excludedTypes.Clear();
                     RenderAssemblies();
-                    ClearTypes();
+                    RenderTypes();
                 }
             });
         }
@@ -201,54 +294,106 @@ namespace PluginDocumenter
                 ? "Microsoft's"
                 : "Microsoft's (" + microsoft + ")";
 
+            var filter = _txtFilter.Text.Trim();
+            var visible = _assemblies
+                .Where(a => _chkShowMicrosoft.Checked || !a.IsMicrosoft)
+                .Where(a => filter.Length == 0
+                            || (a.Name != null && a.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0))
+                .ToList();
+
+            // Hiding a ticked assembly does not untick it. A filter is typed a letter at a time,
+            // and losing a selection to a keystroke would be unforgivable; its classes stay in the
+            // list below under their own heading, and the status line counts what is out of sight.
+            _rendering = true;
             _lvAssemblies.BeginUpdate();
             _lvAssemblies.Items.Clear();
-            foreach (var assembly in _assemblies.Where(a => _chkShowMicrosoft.Checked || !a.IsMicrosoft))
+            foreach (var assembly in visible)
             {
-                var item = new ListViewItem(assembly.Name) { Tag = assembly };
+                var item = new ListViewItem(assembly.Name)
+                {
+                    Tag = assembly,
+                    Checked = _checkedAssemblies.Contains(assembly.Id)
+                };
                 item.SubItems.Add(assembly.IsolationMode == 2 ? "Sandbox" : "None");
                 _lvAssemblies.Items.Add(item);
             }
 
-            // Clearing the list drops the selection with it. Put it back, or say plainly that the
-            // assembly being documented is the one the switch just hid.
-            var reselected = _lvAssemblies.Items.Cast<ListViewItem>()
-                .FirstOrDefault(i => _selectedAssembly != null && ((AssemblyInfo)i.Tag).Id == _selectedAssembly.Id);
-
             _lvAssemblies.EndUpdate();
+            _rendering = false;
 
-            if (reselected != null)
-            {
-                reselected.Selected = true;
-            }
-            else if (_selectedAssembly != null)
-            {
-                _selectedAssembly = null;
-                ClearTypes();
-            }
+            _chkAllAssemblies.Enabled = visible.Count > 0;
+            UpdateStatus();
         }
 
-        private void LvAssemblies_SelectedIndexChanged(object sender, EventArgs e)
+        private void LvAssemblies_ItemChecked(object sender, ItemCheckedEventArgs e)
         {
-            if (_lvAssemblies.SelectedItems.Count == 0)
+            if (_rendering)
             {
                 return;
             }
 
-            var selected = (AssemblyInfo)_lvAssemblies.SelectedItems[0].Tag;
-            if (_selectedAssembly != null && selected.Id == _selectedAssembly.Id)
+            var assembly = (AssemblyInfo)e.Item.Tag;
+            if (e.Item.Checked)
             {
-                // A re-render put the same selection back. Its steps are already on screen.
-                return;
+                _checkedAssemblies.Add(assembly.Id);
+            }
+            else
+            {
+                _checkedAssemblies.Remove(assembly.Id);
             }
 
-            _selectedAssembly = selected;
-            var assemblyId = _selectedAssembly.Id;
+            // The counts stay a beat behind until the types arrive; the tally of assemblies
+            // does not have to.
+            UpdateStatus();
+
+            // Selecting rows and hitting space ticks them one at a time. Wait for the last one.
+            _checkSettled.Stop();
+            _checkSettled.Start();
+        }
+
+        private void CheckAllAssemblies(bool check)
+        {
+            _rendering = true;
+            _lvAssemblies.BeginUpdate();
+            foreach (ListViewItem item in _lvAssemblies.Items)
+            {
+                item.Checked = check;
+                var id = ((AssemblyInfo)item.Tag).Id;
+                if (check)
+                {
+                    _checkedAssemblies.Add(id);
+                }
+                else
+                {
+                    _checkedAssemblies.Remove(id);
+                }
+            }
+
+            _lvAssemblies.EndUpdate();
+            _rendering = false;
+
+            LoadCheckedTypes();
+        }
+
+        /// <summary>
+        /// Fetches the types of every checked assembly not fetched already, in one round trip,
+        /// then puts the list back together.
+        /// </summary>
+        private void LoadCheckedTypes()
+        {
+            var missing = _checkedAssemblies.Where(id => !_typesByAssembly.ContainsKey(id)).ToList();
+            if (missing.Count == 0)
+            {
+                RenderTypes();
+                return;
+            }
 
             WorkAsync(new WorkAsyncInfo
             {
-                Message = "Loading registered steps...",
-                Work = (worker, args) => { args.Result = RegistrationQuery.GetPluginTypes(Service, assemblyId); },
+                Message = missing.Count == 1
+                    ? "Loading registered steps..."
+                    : "Loading registered steps from " + missing.Count + " assemblies...",
+                Work = (worker, args) => { args.Result = RegistrationQuery.GetPluginTypes(Service, missing); },
                 PostWorkCallBack = result =>
                 {
                     if (result.Error != null)
@@ -257,28 +402,85 @@ namespace PluginDocumenter
                         return;
                     }
 
-                    _types = (List<PluginTypeInfo>)result.Result;
-                    _lvTypes.BeginUpdate();
-                    _lvTypes.Items.Clear();
-                    foreach (var type in _types)
+                    var loaded = ((List<PluginTypeInfo>)result.Result).ToLookup(t => t.AssemblyId);
+
+                    // Every assembly asked for is recorded, including the ones that turned out to
+                    // have nothing registered, so unticking and reticking one does not ask again.
+                    foreach (var id in missing)
                     {
-                        var item = new ListViewItem(type.ClassName) { Tag = type, Checked = true };
-                        item.SubItems.Add(type.Steps.Count.ToString());
-                        item.ToolTipText = type.TypeName;
-                        _lvTypes.Items.Add(item);
+                        _typesByAssembly[id] = loaded[id].ToList();
                     }
 
-                    _lvTypes.EndUpdate();
-                    UpdateButtonState();
+                    RenderTypes();
                 }
             });
         }
 
-        private void ClearTypes()
+        /// <summary>
+        /// Rebuilds the class list from the checked assemblies, one group per assembly, keeping
+        /// whatever the user has already unticked.
+        /// </summary>
+        private void RenderTypes()
         {
-            _types = new List<PluginTypeInfo>();
+            _rendering = true;
+            _lvTypes.BeginUpdate();
             _lvTypes.Items.Clear();
-            _txtPreview.Clear();
+            _lvTypes.Groups.Clear();
+
+            foreach (var assembly in _assemblies.Where(a => _checkedAssemblies.Contains(a.Id)))
+            {
+                List<PluginTypeInfo> types;
+                if (!_typesByAssembly.TryGetValue(assembly.Id, out types))
+                {
+                    continue;
+                }
+
+                if (types.Count == 0)
+                {
+                    // An empty group draws nothing at all, so the assembly would simply be
+                    // missing. The status line counts these instead.
+                    continue;
+                }
+
+                var group = new ListViewGroup(assembly.Name);
+                _lvTypes.Groups.Add(group);
+
+                foreach (var type in types)
+                {
+                    var item = new ListViewItem(type.ClassName, group)
+                    {
+                        Tag = type,
+                        Checked = !_excludedTypes.Contains(type.Id),
+                        ToolTipText = type.TypeName
+                    };
+                    item.SubItems.Add(type.Steps.Count.ToString());
+                    _lvTypes.Items.Add(item);
+                }
+            }
+
+            _lvTypes.EndUpdate();
+            _rendering = false;
+
+            UpdateButtonState();
+        }
+
+        private void LvTypes_ItemChecked(object sender, ItemCheckedEventArgs e)
+        {
+            if (_rendering)
+            {
+                return;
+            }
+
+            var type = (PluginTypeInfo)e.Item.Tag;
+            if (e.Item.Checked)
+            {
+                _excludedTypes.Remove(type.Id);
+            }
+            else
+            {
+                _excludedTypes.Add(type.Id);
+            }
+
             UpdateButtonState();
         }
 
@@ -291,6 +493,47 @@ namespace PluginDocumenter
             _btnWrite.Enabled = hasChecked && hasFolder;
             // A comment needs no attribute definitions to compile against.
             _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked;
+
+            UpdateStatus();
+        }
+
+        /// <summary>
+        /// Says what is about to be written, because with the classes grouped under dozens of
+        /// assemblies the answer is no longer whatever happens to be on screen.
+        /// </summary>
+        private void UpdateStatus()
+        {
+            var shown = _lvAssemblies.Items.Count;
+            var shownAndChecked = _lvAssemblies.Items.Cast<ListViewItem>().Count(i => i.Checked);
+            var chosen = _checkedAssemblies.Count;
+
+            // The box speaks for the rows on screen, so that filtering to your own name and
+            // hitting All means all of yours, not all of everybody's.
+            _chkAllAssemblies.CheckState =
+                shown > 0 && shownAndChecked == shown ? CheckState.Checked :
+                shownAndChecked == 0 ? CheckState.Unchecked : CheckState.Indeterminate;
+
+            if (chosen == 0)
+            {
+                _lblStatus.Text =
+                    _assemblies.Count == 0 ? "Load the assemblies to start." :
+                    shown == 0 ? "Nothing matches." :
+                    "Tick the assemblies to document.";
+                return;
+            }
+
+            var empty = _checkedAssemblies.Count(id =>
+            {
+                List<PluginTypeInfo> types;
+                return _typesByAssembly.TryGetValue(id, out types) && types.Count == 0;
+            });
+
+            var hidden = chosen - shownAndChecked;
+
+            _lblStatus.Text = chosen + " assemblies · "
+                + _lvTypes.CheckedItems.Count + " of " + _lvTypes.Items.Count + " classes"
+                + (hidden == 0 ? string.Empty : " · " + hidden + " out of view")
+                + (empty == 0 ? string.Empty : " · " + empty + " with no steps");
         }
 
         private void OutputModeChanged()
@@ -329,9 +572,21 @@ namespace PluginDocumenter
 
         private void BtnPreview_Click(object sender, EventArgs e)
         {
+            var names = _assemblies.ToDictionary(a => a.Id, a => a.Name);
+            var assembly = Guid.Empty;
+
             var sb = new StringBuilder();
             foreach (var type in CheckedTypes())
             {
+                // With a class per assembly the type names alone read as one long list of
+                // strangers, so each assembly announces itself once.
+                if (type.AssemblyId != assembly)
+                {
+                    assembly = type.AssemblyId;
+                    string name;
+                    sb.AppendLine("// ===== " + (names.TryGetValue(assembly, out name) ? name : "Unknown assembly"));
+                }
+
                 sb.AppendLine("// " + type.TypeName);
                 foreach (var line in Remarks(type) ?? Attributes(type))
                 {

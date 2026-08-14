@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PluginDocumenter.Logic
 {
@@ -7,18 +8,37 @@ namespace PluginDocumenter.Logic
     {
         public Guid Id;
         public string Name;
+        public string PublicKeyToken;
         public int IsolationMode;
 
         /// <summary>
-        /// Whether this looks like one of the assemblies Microsoft ships, whose source is in
-        /// nobody's folder. No column on the record says so: first party assemblies are managed,
-        /// hidden and customization level 1 exactly like anything else that arrived in a solution,
-        /// so the name is the only thing left to go on. The UI keeps a switch for when it is wrong.
+        /// Microsoft's strong name keys. Plugin assemblies must be signed, and these are keys
+        /// nobody outside Microsoft can sign with, so a match is proof rather than a guess.
+        /// </summary>
+        private static readonly string[] MicrosoftKeys =
+        {
+            "31bf3856ad364e35", "b77a5c561934e089", "b03f5f7f11d50a3a", "71e9bce111e9429c"
+        };
+
+        /// <summary>
+        /// Whether this is one of the assemblies Microsoft ships, whose source is in nobody's
+        /// folder. No column on the record says so — first party assemblies are managed and
+        /// customization level 1 exactly like anything else that arrived in a solution — and the
+        /// name will not answer it either: the optional apps ship under names of their own, and
+        /// under several different Microsoft publishers. What they have in common is the
+        /// signature, which is why that is asked first and the name is only a second look.
+        /// The UI keeps a switch for when both are wrong.
         /// </summary>
         public bool IsMicrosoft
         {
             get
             {
+                if (PublicKeyToken != null
+                    && MicrosoftKeys.Contains(PublicKeyToken.Trim().ToLowerInvariant()))
+                {
+                    return true;
+                }
+
                 return Name != null && Name.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase);
             }
         }
@@ -32,6 +52,8 @@ namespace PluginDocumenter.Logic
     public class PluginTypeInfo
     {
         public Guid Id;
+        /// <summary>The assembly this type was registered from, for grouping a batch that spans several.</summary>
+        public Guid AssemblyId;
         /// <summary>Namespace qualified type name as registered in Dataverse.</summary>
         public string TypeName;
         public string FriendlyName;
