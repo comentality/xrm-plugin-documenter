@@ -153,11 +153,16 @@ cd tests
 .\register.ps1      # build the assembly, pack two solutions, import them
 .\verify.ps1        # confirm the environment matches the test matrix
 .\unregister.ps1    # take it all away again
+.\xtb.ps1           # build the tool and open it in an XrmToolBox of its own
 ```
 
-Then run the tool against that environment and compare what it writes with the expected
-output in [tests/README.md](tests/README.md), which spells out, class by class, exactly
-what both output modes should produce.
+`xtb.ps1` puts a private XrmToolBox in `tests\.xtb` holding nothing but this tool, connects
+it to the same environment and opens it, so testing a change is one command and cannot
+disturb the XrmToolBox you work in.
+
+Then compare what the tool writes with the expected output in
+[tests/README.md](tests/README.md), which spells out, class by class, exactly what both
+output modes should produce.
 
 ## License
 

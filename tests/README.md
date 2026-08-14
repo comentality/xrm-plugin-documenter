@@ -7,16 +7,43 @@ against something other than "looks about right".
 .\register.ps1      # build the assembly, pack two solutions, import them
 .\verify.ps1        # confirm the environment matches registrations.psd1
 .\unregister.ps1    # take it all away again
+.\xtb.ps1           # build the tool and open it in an XrmToolBox of its own
 ```
 
-All three use the active organization of the current `pac` auth profile; pass
+All four use the active organization of the current `pac` auth profile; pass
 `-Environment <url>` to target another. `register.ps1` is safe to re-run.
 
-Then run the Plugin Documenter against the environment, pick **TestPlugins**, point it at
-`tests/TestPlugins`, and compare what it writes with [Expected output](#expected-output)
-below. `dotnet build tests/TestPlugins` afterwards is itself a check: the project compiles
-against the same `XrmToolsMetaAttributes.cs` the tool emits, so attributes that do not
-compile break the build.
+`xtb.ps1` leaves you looking at the tool, connected, with the source folder on the
+clipboard. Compare what it writes with [Expected output](#expected-output) below.
+`dotnet build tests/TestPlugins` afterwards is itself a check: the project compiles against
+the same `XrmToolsMetaAttributes.cs` the tool emits, so attributes that do not compile
+break the build.
+
+## The test bench
+
+`xtb.ps1` builds a whole XrmToolBox in `tests\.xtb` and starts it with
+`/overridepath`, so it has its own tools folder, its own settings and its own connection
+list. Nothing it does can reach the XrmToolBox you work in, and deleting the folder undoes
+all of it. The instance holds exactly one tool, so the tools list is the tool.
+
+```powershell
+.\xtb.ps1              # build, wire up, launch
+.\xtb.ps1 -Reset       # throw the instance away and build it again
+.\xtb.ps1 -NoLaunch    # set it up without starting anything
+```
+
+The connection is an ordinary OAuth connection against the client id XrmToolBox itself
+uses, so it signs you in interactively once and reads the cached token after that. The only
+thing left to type is the source folder, which the script puts on the clipboard.
+
+Two things cost an hour each and are easy to trip over again:
+
+- `/plugin:` and `/connection:` are read off the **raw** command line, quotes and all. Pass
+  them as separate `-ArgumentList` elements, so the quotes are consumed by argv, and
+  XrmToolBox hangs on the splash screen with no error, forever.
+- The reply url property is `ReplyUrl`. Call it `RedirectUri`, which is what it is called in
+  a connection string, and the element is silently dropped: the connection then fails with
+  *No redirectUri was configured. ADAL does not provide any defaults.*
 
 ## The parts
 
