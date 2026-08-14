@@ -320,12 +320,10 @@ namespace PluginDocumenter
 
         private void BtnBrowse_Click(object sender, EventArgs e)
         {
-            using (var dialog = new FolderBrowserDialog { Description = "Select the folder containing your plugin source files" })
+            var folder = FolderPicker.Pick(this, "Select the folder containing your plugin source files", _txtFolder.Text);
+            if (folder != null)
             {
-                if (dialog.ShowDialog() == DialogResult.OK)
-                {
-                    _txtFolder.Text = dialog.SelectedPath;
-                }
+                _txtFolder.Text = folder;
             }
         }
 
