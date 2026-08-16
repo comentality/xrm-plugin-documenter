@@ -6,6 +6,7 @@
     Turns the test matrix into importable solutions:
 
       1. builds every fixture assembly and reads its real public key token back off the DLL
+         - including the one no solution carries, which register.ps1 registers by hand
       2. resolves each message name to the target environment's sdkmessageid, and the
          signed in user's full name for the impersonating step, so nothing environment
          specific has to be committed
@@ -446,7 +447,10 @@ foreach ($solution in $manifest.Solutions) {
 }
 
 $companion = $null
-$disabled = @($allSteps | Where-Object { Get-StepValue $_.Step 'Disabled' $false })
+# An unmanaged assembly's steps are written disabled on the record, so they have no
+# business in the companion solution - the companion exists only because a solution
+# cannot say so.
+$disabled = @($allSteps | Where-Object { $_.Assembly.Solution -and (Get-StepValue $_.Step 'Disabled' $false) })
 if ($disabled.Count -gt 0) {
     $companion = New-FixtureSolution -Solution $manifest.DisabledSolution -Assemblies @() -Steps $disabled
 }
@@ -454,4 +458,8 @@ if ($disabled.Count -gt 0) {
 [pscustomobject]@{
     Main      = $main
     Companion = $companion
+    # Every assembly, packed or not, and what it turned out to be: register.ps1 hands this
+    # to the unmanaged registration, which needs the DLL and the token it is really signed
+    # with and must not go looking for either a second time.
+    Built     = $built
 }

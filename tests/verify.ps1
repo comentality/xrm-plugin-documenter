@@ -158,7 +158,13 @@ foreach ($assembly in $manifest.Assemblies) {
 
     # ------------------------------------------------------------ the assembly itself
 
-    Test-Fetch -Description "assembly $($assembly.Name) is visible to the documenter" `
+    # Managed or not is the one thing that separates the assembly somebody registered by
+    # hand from the four that arrived in solutions. The documenter does not read it and is
+    # not supposed to start; checking it here is what says the two routes really did
+    # produce two different kinds of record.
+    $managed = if ($assembly.Solution) { 'true' } else { 'false' }
+
+    Test-Fetch -Description "assembly $($assembly.Name) is visible to the documenter and ismanaged $managed" `
         -Expect (Get-AssemblyId $assembly) -Xml @"
 <fetch>
   <entity name="pluginassembly">
@@ -167,6 +173,7 @@ foreach ($assembly in $manifest.Assemblies) {
       <condition attribute="name" operator="eq" value="$($assembly.Name)" />
       <condition attribute="pluginassemblyid" operator="eq" value="$(Get-AssemblyId $assembly)" />
       <condition attribute="isolationmode" operator="eq" value="2" />
+      <condition attribute="ismanaged" operator="eq" value="$managed" />
       <!-- The condition the documenter's own assembly query uses. -->
       <condition attribute="ishidden" operator="eq" value="false" />
     </filter>
@@ -214,7 +221,10 @@ foreach ($assembly in $manifest.Assemblies) {
 
         # The message name and the filtered entity live on linked records, not on the step.
         # The plugin type is qualified by its assembly, because a type name on its own is
-        # not unique across the fixture.
+        # not unique across the fixture. The link is on PluginTypeId and is inner, which is
+        # the check that matters most for a step registered by hand: it is written with the
+        # plugin type on EventHandler, and if the platform ever stopped deriving
+        # PluginTypeId from that, the documenter would find no steps and this would say so.
         $links = @"
     <link-entity name="sdkmessage" from="sdkmessageid" to="sdkmessageid" alias="m">
       <filter>

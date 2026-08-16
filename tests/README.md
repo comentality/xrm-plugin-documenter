@@ -1,8 +1,8 @@
 # End to end tests
 
-Five plugin assemblies, two publishers and three solutions of empty plugins, registered
-every way the documenter has to describe, so a run can be judged against something other
-than "looks about right".
+Six plugin assemblies, two publishers, three solutions of empty plugins and one assembly
+registered by hand into none of them, so a run can be judged against something other than
+"looks about right".
 
 ```powershell
 .\register.ps1      # build the assemblies, pack three solutions, import them
@@ -13,6 +13,12 @@ than "looks about right".
 
 All four use the active organization of the current `pac` auth profile; pass
 `-Environment <url>` to target another. `register.ps1` is safe to re-run.
+
+`pac` only reads, and one assembly here is registered rather than imported, so the records
+that have no solution are written and deleted over the Web API instead — with the access
+token `pac` has already cached for the same organization. There is still nothing to sign
+in to beyond `pac auth`; see [dataverse.ps1](dataverse.ps1) for why the refresh token is
+left alone.
 
 `xtb.ps1` leaves you looking at the tool, connected, with the source folder on the
 clipboard. Compare what it writes with [Expected output](#expected-output) below.
@@ -32,6 +38,7 @@ tests\src\                    <- point the tool here
     TestPlugins\              Comentality's assembly
     ContosoPlugins\           Contoso's assembly
     MsContosoExtensions\      the assembly named Microsoft
+    WorkInProgressPlugins\    the one registered by hand, in no solution
     Shared\                   Twin.cs, compiled into two of them
 tests\nosource\               deliberately out of reach
     OrphanPlugins\            registered, and the tool must not find its source
@@ -81,6 +88,8 @@ copy of them to be wrong.
 | `solution/` | The solution manifest template and the two static files every solution carries. |
 | `matrix.ps1` | Ids, assembly full names and generated step names, shared so `build.ps1` and `verify.ps1` cannot disagree. |
 | `build.ps1` | Turns the matrix into three solution zips. `register.ps1` calls it; run it alone to inspect the zips. |
+| `unmanaged.ps1` | The other half of `register.ps1` and `unregister.ps1`: the assembly that is in no solution, written and deleted record by record. |
+| `dataverse.ps1` | An access token and four verbs. The only thing here that talks to the environment without going through `pac`. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
@@ -96,10 +105,15 @@ everywhere. They sign nothing anyone should trust.
 | `Contoso.Crm.Orphan` | Contoso | Contoso | none | Registered, with steps, and no `.cs` anywhere the tool will look. |
 | `Contoso.Crm.Empty` | Contoso | Contoso | none | Plugin types and not one step against any of them. |
 | `Microsoft.Contoso.Extensions` | Contoso | Contoso | `src\MsContosoExtensions` | Named Microsoft, signed by Contoso. The case `IsMicrosoft` gets wrong on purpose. |
+| `WorkInProgress.Plugins` | none | TestPlugins | `src\WorkInProgressPlugins` | In no solution and unmanaged: a plugin somebody is still writing, registered by hand into their own environment. |
 
 Two publishers and two keys, and the two do not line up: `Microsoft.Contoso.Extensions`
 carries the same signature as its plainly-not-Microsoft neighbours. Publisher is not on
 the `pluginassembly` record at all, which is the point of there being one to ignore.
+
+`WorkInProgress.Plugins` has no publisher at all, because nothing published it. It shares
+TestPlugins' key for the same reason: it is the same developer's second project rather
+than a third vendor.
 
 ## Why three solutions
 
@@ -122,20 +136,53 @@ the matrix marks `Disabled` go into a companion solution imported without that f
 The companion goes last, because its step runs against a plugin type the first solution
 installs. `unregister.ps1` deletes it first for the same reason.
 
+## Why one assembly is in none of them
+
+Everything above describes a plugin that has been *shipped*. That is not where the
+documenter is used. It is used on a plugin somebody is in the middle of writing: built,
+registered straight into a development environment, and pointed at to get the comments
+out. Nothing about that involves a solution, and until `WorkInProgress.Plugins` existed
+nothing here covered it.
+
+So it is registered the way the plugin registration tool registers one — the assembly,
+its plugin types, its steps and their images written into the organization as unmanaged
+records belonging to no solution but the Default one. What that reaches and the solutions
+do not:
+
+- **`ismanaged` is false** on every record, along with the whole unmanaged customization
+  layer. The documenter does not read any of it and is not meant to start; `verify.ps1`
+  asserts it so the two routes are known to produce two genuinely different kinds of row.
+- **`PluginTypeId` is derived, not written.** A step is created with its plugin type on
+  `EventHandler`, which is polymorphic — a step can run a service endpoint instead — and
+  the platform fills in `PluginTypeId` from it. `PluginTypeId` is what the documenter's
+  step query joins on. Were that ever to stop happening, the tool would find no steps at
+  all in the one environment shape that matters most, and only this fixture would say so.
+- **A disabled step, disabled on the step.** The managed route can only reach one through
+  a whole companion solution imported without `--activate-plugins`. Here it is one field
+  on one record, which is how a developer actually switches a step off.
+- **The generated step name is the registration tool's.** The documenter suppresses a step
+  name it recognises as the default one, and this is the only fixture where the string it
+  compares against was produced the same way a user's is.
+
+There is no zip to delete afterwards, so `unregister.ps1` deletes the records instead:
+images, steps, plugin types, then the assembly, because none of them will go while
+something still points at it.
+
 # Expected output
 
-Twenty seven steps across twenty three registered plugin types in five assemblies.
+Thirty steps across twenty six registered plugin types in six assemblies.
 
 ## The assembly list
 
-With nothing typed in the filter box and the Microsoft switch off, the list shows **four**
-of the fixture's five, in name order:
+With nothing typed in the filter box and the Microsoft switch off, the list shows **five**
+of the fixture's six, in name order:
 
 ```
 Contoso.Crm.Empty        Sandbox
 Contoso.Crm.Orphan       Sandbox
 Contoso.Crm.Plugins      Sandbox
 TestPlugins              Sandbox
+WorkInProgress.Plugins   Sandbox
 ```
 
 `Microsoft.Contoso.Extensions` is missing, and is counted on the switch instead - the count
@@ -144,10 +191,10 @@ It is signed with the Contoso key, so nothing about its signature says Microsoft
 hidden on the strength of its name alone, and the switch is the only thing that brings it
 back.
 
-Ticking all four:
+Ticking all five:
 
 ```
-4 assemblies · 18 of 18 classes · 1 with no steps
+5 assemblies · 21 of 21 classes · 1 with no steps
 ```
 
 `Contoso.Crm.Empty` is the one with no steps. It contributes no group at all to the class
@@ -159,6 +206,8 @@ Things worth doing to the list once it is loaded:
 - Type `Contoso` in the filter. Three rows, and the "All" box ticks those three and goes
   indeterminate rather than checked. Turn the Microsoft switch on and the same filter
   shows four: the switch and the filter compose rather than override each other.
+- Nothing about `WorkInProgress.Plugins` sets it apart in this list, which is the point:
+  it is unmanaged and in no solution, and the list has no column that could say so.
 - Tick `TestPlugins`, then filter it out of view. It stays ticked, its classes stay in the
   list under their own heading, and the status line says `· 1 out of view`.
 
@@ -175,6 +224,7 @@ regroup them, so each assembly's `// =====` heading appears exactly once:
 // ===== Contoso.Crm.Orphan
 // ===== Contoso.Crm.Plugins
 // ===== TestPlugins
+// ===== WorkInProgress.Plugins
 ```
 
 `Shared.Twin` sorts ahead of everything named `TestPlugins.*`, so it is the first class
@@ -479,6 +529,58 @@ faked, because the import validates the strong name and nobody outside Microsoft
 with those. That branch of `IsMicrosoft` can only be judged against whatever first party
 assemblies the environment really has, which is what the count on the switch is for.
 
+## WorkInProgress.Plugins - registered by hand, in no solution
+
+The whole assembly has to come out looking exactly like the ones that arrived in
+solutions. Anything that differs is a bug, because nothing the documenter reads is
+supposed to know how a registration got there.
+
+### NewFeature
+
+Everything at its default, on the route the tool is really used through.
+
+```csharp
+[Plugin]
+[Step("Create", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
+```
+```csharp
+/// Sync Post-Create of account (order 1): (all columns)
+```
+
+### HalfFinished
+
+Filtered and switched off, which is the resting state of half the steps in any
+development environment. `disabled` here comes off `statecode` on the step itself rather
+than off which solution imported it, and has to read identically to
+`DisabledAndImpersonated`'s.
+
+```csharp
+[Plugin(Description = "Not finished, and switched off until it is.")]
+[Step("Update", "contact", "firstname", Stages.PreOperation, ExecutionMode.Synchronous)]
+```
+```csharp
+/// Sync Pre-Update of contact (order 1, disabled): firstname
+```
+
+### Scratch
+
+The one step in the fixture whose name a person typed, sitting beside two that kept the
+name the registration tool offered - so `Name` is emitted here and suppressed there,
+against a default string produced the same way a user's is. Its pre image is on a
+`Delete`, which is the only place a pre image is much use.
+
+```csharp
+[Plugin]
+[Step("Delete", "task", Stages.PreOperation, ExecutionMode.Synchronous,
+    Name = "Tidy up after a deleted task",
+    Description = "Temporary. Remove before this goes anywhere near production.")]
+[Image(ImageTypes.PreImage, "subject,regardingobjectid")]
+```
+```csharp
+/// Sync Pre-Delete of task (order 1)
+///     PreImage: subject, regardingobjectid
+```
+
 ## In the codebase, never registered
 
 Two classes in `src\ContosoPlugins` are compiled into `Contoso.Crm.Plugins` and are not
@@ -496,11 +598,11 @@ matter. It is pinned here as behaviour, not endorsed as correct.
 
 ## The write report
 
-With all five assemblies ticked and the source folder set to `tests\src`, all nineteen
+With all six assemblies ticked and the source folder set to `tests\src`, all twenty two
 classes are accounted for and pressing Write should produce a report of the shape:
 
 ```
-// Updated (14)
+// Updated (17)
 //   ... every class with a file, Twin twice
 // Ambiguous, several files declare the class (3)
 //   Duplicate (2 files)
@@ -511,14 +613,14 @@ classes are accounted for and pressing Write should produce a report of the shap
 //   Ghost
 ```
 
-Fourteen writes over thirteen files, because `Twin` is written once per assembly. Run it a
+Seventeen writes over sixteen files, because `Twin` is written once per assembly. Run it a
 second time without changing anything and it becomes:
 
 ```
 // Updated (2)
 //   Twin
 //   Twin
-// Already up to date (12)
+// Already up to date (15)
 ```
 
 `Twin` is the one thing that cannot settle: the two registrations overwrite each other on
@@ -528,11 +630,6 @@ every run, for ever.
 
 Worth knowing what the suite does *not* pin, so a gap is not mistaken for a pass:
 
-- **An unmanaged assembly.** `customizationlevel` is a dead end for telling assemblies
-  apart and the documenter does not read it, so the value would be a regression guard
-  only - and the cost is real: deleting an unmanaged solution leaves its components behind,
-  and `pac` has no command that deletes a record, so there would be no clean way to
-  unregister it.
 - **A real Microsoft signature.** See above; it cannot be faked and is left to the
   environment's own first party assemblies.
 - **`isolationmode` "None".** Online forces sandbox for everything that is not Microsoft's,
@@ -576,3 +673,25 @@ Things that cost time, in case they cost it again:
   token is read off the built DLL rather than written down. Five hand maintained copies of
   the same XML is five chances for one of them to be quietly wrong about a token, and a
   wrong token fails the import in the same way everything else does.
+
+And, from registering the sixth assembly without one:
+
+- `pac` reads and imports; it deletes solutions and nothing smaller. That is the whole
+  reason `dataverse.ps1` exists, and it is a short script rather than a dependency because
+  the Power Platform CLI's own MSAL cache already holds an access token for the
+  organization it last talked to. Read that and there is no second sign in to arrange.
+  Do **not** redeem the refresh token instead: Entra rotates it, and `pac` would be left
+  holding one that no longer works.
+- A `PATCH` to a record that is not there creates it, which is what makes registering by
+  hand as re-runnable as importing a solution twice.
+- `sdkmessageprocessingstep` has no `plugintypeid` column in the Web API at all - the
+  writable one is `eventhandler`, bound as `eventhandler_plugintype@odata.bind`, and
+  `PluginTypeId` is derived from it. FetchXML and the SDK both still see `plugintypeid`,
+  which is why `verify.ps1` and the documenter can join on something the create call
+  cannot set.
+- The API validates the image against the message, which is worth knowing before writing
+  a fixture that reads sensibly and then will not register: a pre image on `Create` is
+  refused outright ("Message Create does not support this image type"), and a post image
+  on `Create` has to name `Id` as its message property rather than `Target`.
+- `statecode` is its own write. It is made on every registration rather than only for the
+  steps meant to be off, so a step somebody disabled by hand comes back enabled.

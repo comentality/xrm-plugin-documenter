@@ -15,7 +15,13 @@
     All three are managed, so unregister.ps1 can take them away again completely. The
     companion goes last because its steps run against plugin types the others install.
 
-    Safe to run repeatedly: importing the same solution again updates it in place.
+    Then the assembly that is in no solution at all, written record by record over the Web
+    API the way the plugin registration tool writes one into a development environment.
+    That is the shape the documenter is really used against, and the only one the solution
+    route cannot produce; see unmanaged.ps1.
+
+    Safe to run repeatedly: importing the same solution again updates it in place, and the
+    unmanaged records are written at ids of the fixture's own choosing.
 
 .EXAMPLE
     .\register.ps1
@@ -34,6 +40,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = $PSScriptRoot
+. (Join-Path $root 'unmanaged.ps1')
+
+$manifest = Import-PowerShellDataFile (Join-Path $root 'registrations.psd1')
 $envArgs = if ($Environment) { @('--environment', $Environment) } else { @() }
 
 $zips = & (Join-Path $root 'build.ps1') -Environment $Environment -SkipAssemblyBuild:$SkipAssemblyBuild
@@ -58,6 +67,8 @@ foreach ($zip in $zips.Main) {
 if ($zips.Companion) {
     Import-Fixture -Path $zips.Companion
 }
+
+Register-Unmanaged -Manifest $manifest -Built $zips.Built -Environment $Environment
 
 Write-Host ''
 Write-Host 'Registered. Point the Plugin Documenter at the source folder:'

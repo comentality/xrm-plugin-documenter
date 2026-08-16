@@ -8,16 +8,23 @@
     them - which an unmanaged solution would not: its components stay behind in the
     Default solution.
 
+    Then the assembly that was registered without a solution, which has nothing to delete
+    but its records: images, steps, plugin types and the assembly, in that order, because
+    none of them will go while something still points at it.
+
     The publishers the solutions were imported under are left alone. They own nothing once
     the solutions are gone, and pac has no command for deleting one.
 
-    A solution that is not there is not an error; this is safe to run at any time.
+    Neither a solution nor a record that is not there is an error; this is safe to run at
+    any time, including twice.
 #>
 [CmdletBinding()]
 param([string] $Environment)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot 'unmanaged.ps1')
 
 $manifest = Import-PowerShellDataFile (Join-Path $PSScriptRoot 'registrations.psd1')
 $envArgs = if ($Environment) { @('--environment', $Environment) } else { @() }
@@ -41,6 +48,8 @@ foreach ($name in $names) {
 
     throw "Deleting $name failed:`r`n$($output -join "`r`n")"
 }
+
+Unregister-Unmanaged -Manifest $manifest -Environment $Environment
 
 Write-Host ''
 Write-Host 'Unregistered. Every fixture assembly and all of their steps are gone.'

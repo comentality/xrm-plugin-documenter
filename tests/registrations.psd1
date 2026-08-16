@@ -1,7 +1,7 @@
 <#
     The test matrix.
 
-    Five plugin assemblies, three solutions, two publishers and two strong name keys, so
+    Six plugin assemblies, three solutions, two publishers and two strong name keys, so
     that the things the documenter has to get right about *several* assemblies - which
     ones it hides, which ones it groups a class under, which class a file belongs to when
     two assemblies claim the same name - are pinned by something other than opinion.
@@ -23,7 +23,11 @@
                   traced back to its assembly by eye.
       Namespace   stripped from a type name to make its FriendlyName. Nothing more.
       Project     the csproj, relative to tests\.
-      Solution    which solution the assembly and its steps are packed into.
+      Solution    which solution the assembly and its steps are packed into, or $null to
+                  register it record by record instead, the way the plugin registration
+                  tool does in a development environment. Those records are unmanaged and
+                  belong to no solution, so register.ps1 writes them over the Web API and
+                  unregister.ps1 deletes them one at a time.
       Source      where the documenter would find the source, or $null when it must not
                   find any. Documentation only; what decides it is whether the project
                   lives under tests\src or tests\nosource.
@@ -44,9 +48,10 @@
       Name          step name. Omit to get the name Dataverse generates, which the
                     documenter is supposed to recognise as a default and not emit.
       Impersonate   run in the context of the user register.ps1 is signed in as.
-      Disabled      leave the step registered but switched off. These go into a separate
-                    solution, because the format has no element for a step's state and the
-                    only lever is whether the import is run with --activate-plugins.
+      Disabled      leave the step registered but switched off. In a solution these go
+                    into a separate one, because the format has no element for a step's
+                    state and the only lever is whether the import is run with
+                    --activate-plugins. An unmanaged step is simply written disabled.
       Images        Type 0 PreImage, 1 PostImage, 2 both. Attributes omitted means every
                     column, which the summary comment has to flag.
 #>
@@ -380,6 +385,60 @@
                     Id = '01'; Type = 'Microsoft.Contoso.Renamed'
                     Message = 'Update'; Entity = 'account'; Stage = 40; Mode = 0; Rank = 9
                     Filter = 'websiteurl'
+                }
+            )
+        }
+
+        # ======================================================= WorkInProgress.Plugins
+        # In no solution at all. Registered record by record against the environment, the
+        # way the plugin registration tool registers a plugin somebody is still writing -
+        # which is the situation the documenter exists for, and the only one every other
+        # assembly here fails to be. Everything about it is unmanaged, its steps carry the
+        # names the registration tool generates, and the disabled one is disabled on the
+        # record rather than by which solution it was imported in.
+        @{
+            Name      = 'WorkInProgress.Plugins'
+            Block     = '6'
+            Namespace = 'WorkInProgress'
+            Project   = 'src\WorkInProgressPlugins\WorkInProgressPlugins.csproj'
+            Solution  = $null
+            Source    = 'src\WorkInProgressPlugins'
+
+            Types = @(
+                @{ Id = '01'; Name = 'WorkInProgress.NewFeature' }
+                @{ Id = '02'; Name = 'WorkInProgress.HalfFinished'
+                   Description = 'Not finished, and switched off until it is.' }
+                @{ Id = '03'; Name = 'WorkInProgress.Scratch' }
+            )
+
+            Steps = @(
+                # The plain case on the unmanaged route: everything at its default, so the
+                # emitter has nothing to add and nothing to leave out.
+                @{
+                    Id = '01'; Type = 'WorkInProgress.NewFeature'
+                    Message = 'Create'; Entity = 'account'; Stage = 40; Mode = 0; Rank = 1
+                }
+                # Disabled on the record, not by being imported into another solution.
+                @{
+                    Id = '02'; Type = 'WorkInProgress.HalfFinished'
+                    Message = 'Update'; Entity = 'contact'; Stage = 20; Mode = 0; Rank = 1
+                    Filter = 'firstname'
+                    Disabled = $true
+                }
+                # The only step in the fixture whose name was typed by a person into the
+                # registration tool, beside two that kept the name it offered. Its image is
+                # the ordinary one - a pre image on a delete, taken before the record goes -
+                # written through an API that, unlike the solution importer, refuses an
+                # image the message cannot supply: a pre image on Create is rejected, and so
+                # is a post image on Create whose property is Target rather than Id.
+                @{
+                    Id = '03'; Type = 'WorkInProgress.Scratch'
+                    Message = 'Delete'; Entity = 'task'; Stage = 20; Mode = 0; Rank = 1
+                    Name = 'Tidy up after a deleted task'
+                    Description = 'Temporary. Remove before this goes anywhere near production.'
+                    Images = @(
+                        @{ Type = 0; Name = 'PreImage'; Alias = 'PreImage'; Attributes = 'subject,regardingobjectid' }
+                    )
                 }
             )
         }
