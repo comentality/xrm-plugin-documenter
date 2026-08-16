@@ -87,6 +87,16 @@ function Register-Unmanaged {
     })
     $targets = Resolve-StepTargets $steps
 
+    # Impersonation is a lookup, and the two routes reach it differently: a solution
+    # carries ImpersonatingUserIdName and lets the importer resolve the name, while a
+    # record written by hand has to name the id. WhoAmI answers with the caller's, which is
+    # the same user the solution route would have named - whoever ran register.ps1.
+    $impersonatedUserId = $null
+    if (@($steps | Where-Object { Get-StepValue $_.Step 'Impersonate' $false }).Count -gt 0) {
+        $impersonatedUserId = (Invoke-Dataverse -Method GET -Path 'WhoAmI').UserId
+        if (-not $impersonatedUserId) { throw 'WhoAmI did not answer with a user id.' }
+    }
+
     foreach ($assembly in $assemblies) {
         Write-Host "Registering $($assembly.Name) unmanaged..."
 
@@ -148,6 +158,13 @@ function Register-Unmanaged {
             if ($entity -ne 'none') {
                 $body['sdkmessagefilterid@odata.bind'] =
                     "/sdkmessagefilters($($targets.Filters["$($step.Message)/$entity"]))"
+            }
+
+            # Written only when the matrix asks for it. Clearing the lookup again would be
+            # a DELETE against the reference rather than a null in the body, and no step
+            # here ever stops impersonating - the solution route does not clear it either.
+            if (Get-StepValue $step 'Impersonate' $false) {
+                $body['impersonatinguserid@odata.bind'] = "/systemusers($impersonatedUserId)"
             }
 
             Set-DataverseRecord -Set 'sdkmessageprocessingsteps' -Id $stepId -Body $body

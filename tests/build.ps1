@@ -6,7 +6,7 @@
     Turns the test matrix into importable solutions:
 
       1. builds every fixture assembly and reads its real public key token back off the DLL
-         - including the one no solution carries, which register.ps1 registers by hand
+         - including the two no solution carries, which register.ps1 registers by hand
       2. resolves each message name to the target environment's sdkmessageid, and the
          signed in user's full name for the impersonating step, so nothing environment
          specific has to be committed
@@ -14,8 +14,8 @@
          SdkMessageProcessingStep xml per entry in the matrix
       4. packs one managed solution per publisher, plus the companion described below
 
-    Every assembly's metadata is generated rather than committed, because five copies of
-    the same xml is five chances to get one of them subtly wrong. What is worth knowing
+    Every assembly's metadata is generated rather than committed, because four copies of
+    the same xml is four chances to get one of them subtly wrong. What is worth knowing
     about the shape of it, since getting any of this wrong fails the import with a bare
     NullReferenceException out of GetPluginAssembliesTable and no hint as to why:
 
@@ -161,9 +161,11 @@ $rows = Invoke-Pac (@('env', 'fetch') + $envArgs + @('--xmlFile', $fetchFile))
 foreach ($name in $wanted) { $messageIds[$name] = Get-IdByName -Output $rows -Name $name }
 
 # The schema carries impersonation as ImpersonatingUserIdName, so what is needed is the
-# user's full name - which is also exactly what the documenter reads back and prints.
+# user's full name - which is also exactly what the documenter reads back and prints. Only
+# the steps that go into a solution need it; an unmanaged one is written with the id
+# instead, which unmanaged.ps1 asks WhoAmI for.
 $impersonatedUserName = $null
-if ($allSteps | Where-Object { Get-StepValue $_.Step 'Impersonate' $false }) {
+if ($allSteps | Where-Object { $_.Assembly.Solution -and (Get-StepValue $_.Step 'Impersonate' $false) }) {
     $who = Invoke-Pac (@('env', 'who') + $envArgs)
     $line = $who | Where-Object { $_ -match 'User ID:\s+([0-9a-fA-F-]{36})' }
     if (-not $line) { throw 'Could not read the signed in user id from pac env who.' }

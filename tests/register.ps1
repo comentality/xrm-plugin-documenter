@@ -5,20 +5,22 @@
 .DESCRIPTION
     Builds the fixture solutions and imports them:
 
-      PluginDocumenterE2E          publisher Comentality: TestPlugins, its plugin types
-                                   and every enabled step, imported with --activate-plugins
-      PluginDocumenterE2EContoso   publisher Contoso: the four Contoso assemblies and
-                                   their steps, also with --activate-plugins
+      PluginDocumenterE2E          publisher Comentality: Microsoft.Contoso.Extensions,
+                                   its plugin type and its step, imported with
+                                   --activate-plugins
+      PluginDocumenterE2EContoso   publisher Contoso: the three Contoso assemblies and
+                                   their enabled steps, also with --activate-plugins
       PluginDocumenterE2EDisabled  the steps that are meant to stay switched off,
                                    imported without it
 
     All three are managed, so unregister.ps1 can take them away again completely. The
     companion goes last because its steps run against plugin types the others install.
 
-    Then the assembly that is in no solution at all, written record by record over the Web
-    API the way the plugin registration tool writes one into a development environment.
-    That is the shape the documenter is really used against, and the only one the solution
-    route cannot produce; see unmanaged.ps1.
+    Then the two assemblies that are in no solution at all, written record by record over
+    the Web API the way the plugin registration tool writes one into a development
+    environment. That is the shape the documenter is really used against - it is what the
+    assembly list shows before any switch is touched - and the only one the solution route
+    cannot produce; see unmanaged.ps1.
 
     Safe to run repeatedly: importing the same solution again updates it in place, and the
     unmanaged records are written at ids of the fixture's own choosing.

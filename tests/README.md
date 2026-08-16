@@ -1,8 +1,15 @@
 # End to end tests
 
-Six plugin assemblies, two publishers, three solutions of empty plugins and one assembly
+Six plugin assemblies, two publishers, three solutions of empty plugins and two assemblies
 registered by hand into none of them, so a run can be judged against something other than
 "looks about right".
+
+The split is not arbitrary. The documenter shows **unmanaged** assemblies by default -
+the plugin somebody is in the middle of writing - so the two registered by hand are what
+the tool opens on, and they carry every shape of step, image and free text the emitters
+have to describe. The four that arrived in managed solutions are what somebody shipped;
+they sit behind the **Managed** switch and carry the cases that are about *other people's*
+assemblies: a second vendor, a registration with no source, an assembly with no steps.
 
 ```powershell
 .\register.ps1      # build the assemblies, pack three solutions, import them
@@ -14,9 +21,9 @@ registered by hand into none of them, so a run can be judged against something o
 All four use the active organization of the current `pac` auth profile; pass
 `-Environment <url>` to target another. `register.ps1` is safe to re-run.
 
-`pac` only reads, and one assembly here is registered rather than imported, so the records
-that have no solution are written and deleted over the Web API instead — with the access
-token `pac` has already cached for the same organization. There is still nothing to sign
+`pac` only reads, and two assemblies here are registered rather than imported, so the
+records that have no solution are written and deleted over the Web API instead — with
+the access token `pac` has already cached for the same organization. There is still nothing to sign
 in to beyond `pac auth`; see [dataverse.ps1](dataverse.ps1) for why the refresh token is
 left alone.
 
@@ -35,10 +42,10 @@ one:
 
 ```
 tests\src\                    <- point the tool here
-    TestPlugins\              Comentality's assembly
-    ContosoPlugins\           Contoso's assembly
-    MsContosoExtensions\      the assembly named Microsoft
-    WorkInProgressPlugins\    the one registered by hand, in no solution
+    TestPlugins\              registered by hand, in no solution
+    WorkInProgressPlugins\    registered by hand, in no solution
+    ContosoPlugins\           Contoso's assembly, shipped in a managed solution
+    MsContosoExtensions\      the assembly named Microsoft, also shipped
     Shared\                   Twin.cs, compiled into two of them
 tests\nosource\               deliberately out of reach
     OrphanPlugins\            registered, and the tool must not find its source
@@ -84,11 +91,11 @@ copy of them to be wrong.
 |---|---|
 | `registrations.psd1` | The test matrix. Assemblies, publishers, solutions, plugin types and steps; the only file to edit to change what gets registered. |
 | `src/`, `nosource/` | The plugin projects. Each class's summary says which behaviour it pins. |
-| `keys/Contoso.snk` | The strong name key the four Contoso assemblies share. |
+| `keys/Contoso.snk` | The strong name key four of the six assemblies are signed with, whoever published them. |
 | `solution/` | The solution manifest template and the two static files every solution carries. |
 | `matrix.ps1` | Ids, assembly full names and generated step names, shared so `build.ps1` and `verify.ps1` cannot disagree. |
 | `build.ps1` | Turns the matrix into three solution zips. `register.ps1` calls it; run it alone to inspect the zips. |
-| `unmanaged.ps1` | The other half of `register.ps1` and `unregister.ps1`: the assembly that is in no solution, written and deleted record by record. |
+| `unmanaged.ps1` | The other half of `register.ps1` and `unregister.ps1`: the two assemblies that are in no solution, written and deleted record by record. |
 | `dataverse.ps1` | An access token and four verbs. The only thing here that talks to the environment without going through `pac`. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
@@ -98,22 +105,24 @@ everywhere. They sign nothing anyone should trust.
 
 ## The assemblies
 
-| Assembly | Publisher | Key | Source | Why it is here |
-|---|---|---|---|---|
-| `TestPlugins` | Comentality | its own | `src\TestPlugins` | Every shape of step, image and free text the emitters have to describe. |
-| `Contoso.Crm.Plugins` | Contoso | Contoso | `src\ContosoPlugins` | A second vendor in the same source folder: different publisher, different signature, colliding class names. |
-| `Contoso.Crm.Orphan` | Contoso | Contoso | none | Registered, with steps, and no `.cs` anywhere the tool will look. |
-| `Contoso.Crm.Empty` | Contoso | Contoso | none | Plugin types and not one step against any of them. |
-| `Microsoft.Contoso.Extensions` | Contoso | Contoso | `src\MsContosoExtensions` | Named Microsoft, signed by Contoso. The case `IsMicrosoft` gets wrong on purpose. |
-| `WorkInProgress.Plugins` | none | TestPlugins | `src\WorkInProgressPlugins` | In no solution and unmanaged: a plugin somebody is still writing, registered by hand into their own environment. |
+| Assembly | Registered | Publisher | Key | Source | Why it is here |
+|---|---|---|---|---|---|
+| `TestPlugins` | by hand | none | its own | `src\TestPlugins` | Every shape of step, image and free text the emitters have to describe - on the route the tool is really used through. |
+| `WorkInProgress.Plugins` | by hand | none | TestPlugins | `src\WorkInProgressPlugins` | The second thing the same developer has open: a plugin still being written, so the default view has two assemblies to group under. |
+| `Contoso.Crm.Plugins` | solution | Contoso | Contoso | `src\ContosoPlugins` | A second vendor in the same source folder: different publisher, different signature, colliding class names. |
+| `Contoso.Crm.Orphan` | solution | Contoso | Contoso | none | Registered, with steps, and no `.cs` anywhere the tool will look. |
+| `Contoso.Crm.Empty` | solution | Contoso | Contoso | none | Plugin types and not one step against any of them. |
+| `Microsoft.Contoso.Extensions` | solution | Comentality | Contoso | `src\MsContosoExtensions` | Named Microsoft, signed by Contoso, shipped by Comentality. The case `IsMicrosoft` gets wrong on purpose. |
 
-Two publishers and two keys, and the two do not line up: `Microsoft.Contoso.Extensions`
-carries the same signature as its plainly-not-Microsoft neighbours. Publisher is not on
-the `pluginassembly` record at all, which is the point of there being one to ignore.
+Two publishers and two keys, and nothing lines up:
+`Microsoft.Contoso.Extensions` is called Microsoft, carries the same signature as its
+plainly-not-Microsoft neighbours, and was shipped by a publisher of neither name. The
+documenter reads the name and the signature and cannot see the publisher at all, which is
+the point of there being one to ignore.
 
-`WorkInProgress.Plugins` has no publisher at all, because nothing published it. It shares
-TestPlugins' key for the same reason: it is the same developer's second project rather
-than a third vendor.
+Neither assembly registered by hand has a publisher, because nothing published them. They
+share nothing but a folder: `WorkInProgress.Plugins` is signed with TestPlugins' key
+because it is the same developer's second project rather than a third vendor.
 
 ## Why three solutions
 
@@ -121,30 +130,36 @@ All three are **managed**, and that is load bearing: deleting an unmanaged solut
 every component behind in the Default solution, so `unregister.ps1` would unregister
 nothing.
 
-A solution has exactly one publisher, so the two vendors need one each. The third exists
+A solution has exactly one publisher, so the two publishers need one each. The third exists
 because the solution format has no element for a step's state: `StateCode` is not in the
 schema and the importer ignores one if you invent it. Every step lands *disabled* unless
 the import is run with `--activate-plugins`, which then enables all of them. So the steps
-the matrix marks `Disabled` go into a companion solution imported without that flag.
+the matrix marks `Disabled` **and** that belong to an assembly in a solution go into a
+companion imported without that flag. An unmanaged step needs none of this: its state is
+one field on the record.
 
 | Solution | Publisher | Contents | Imported |
 |---|---|---|---|
-| `PluginDocumenterE2E` | Comentality | `TestPlugins`, 14 plugin types, 19 steps | `--activate-plugins` |
-| `PluginDocumenterE2EContoso` | Contoso | the four Contoso assemblies, 9 plugin types, 7 steps | `--activate-plugins` |
-| `PluginDocumenterE2EDisabled` | Comentality | 1 step | plain, so it stays off |
+| `PluginDocumenterE2E` | Comentality | `Microsoft.Contoso.Extensions`, 1 plugin type, 1 step | `--activate-plugins` |
+| `PluginDocumenterE2EContoso` | Contoso | the three Contoso assemblies, 8 plugin types, 5 steps | `--activate-plugins` |
+| `PluginDocumenterE2EDisabled` | Contoso | 1 step | plain, so it stays off |
 
-The companion goes last, because its step runs against a plugin type the first solution
+The companion goes last, because its step runs against a plugin type another solution
 installs. `unregister.ps1` deletes it first for the same reason.
 
-## Why one assembly is in none of them
+The first solution exists to keep a second publisher in play, and holds the one assembly
+whose publisher is a deliberate lie. If it ever ends up empty `build.ps1` throws rather
+than packing a solution with nothing in it.
 
-Everything above describes a plugin that has been *shipped*. That is not where the
+## Why two assemblies are in none of them
+
+Everything in a solution describes a plugin that has been *shipped*. That is not where the
 documenter is used. It is used on a plugin somebody is in the middle of writing: built,
 registered straight into a development environment, and pointed at to get the comments
-out. Nothing about that involves a solution, and until `WorkInProgress.Plugins` existed
-nothing here covered it.
+out. Nothing about that involves a solution, and it is what the assembly list shows before
+any switch is touched — so it is where the assembly with every interesting case lives.
 
-So it is registered the way the plugin registration tool registers one — the assembly,
+Both are registered the way the plugin registration tool registers one — the assembly,
 its plugin types, its steps and their images written into the organization as unmanaged
 records belonging to no solution but the Default one. What that reaches and the solutions
 do not:
@@ -161,8 +176,18 @@ do not:
   a whole companion solution imported without `--activate-plugins`. Here it is one field
   on one record, which is how a developer actually switches a step off.
 - **The generated step name is the registration tool's.** The documenter suppresses a step
-  name it recognises as the default one, and this is the only fixture where the string it
-  compares against was produced the same way a user's is.
+  name it recognises as the default one, and the string it compares against here was
+  produced the same way a user's is.
+- **Impersonation is written as an id.** A solution carries `ImpersonatingUserIdName` and
+  lets the importer resolve the name; a record written by hand binds
+  `impersonatinguserid` to a `systemuser`, which `unmanaged.ps1` asks `WhoAmI` for. Both
+  reach the same column and the documenter cannot tell which route wrote it — which is
+  worth having pinned, because those are two quite different pieces of plumbing.
+- **Free text arrives exactly as it was sent.** The Web API keeps CRLF; the solution
+  importer does not, because XML normalises line endings inside an element. Same text, two
+  routes, two literals in the emitted attribute. `TestPlugins.EscapedText` and
+  `Contoso.Crm.Charlie` are the pair, and the difference is visible in what the tool
+  writes rather than only in the environment.
 
 There is no zip to delete afterwards, so `unregister.ps1` deletes the records instead:
 images, steps, plugin types, then the assembly, because none of them will go while
@@ -174,24 +199,42 @@ Thirty steps across twenty six registered plugin types in six assemblies.
 
 ## The assembly list
 
-With nothing typed in the filter box and the Microsoft switch off, the list shows **five**
-of the fixture's six, in name order:
+With nothing typed in the filter box and both switches off, the list shows **two** of the
+fixture's six, in name order - the two nobody shipped:
 
 ```
-Contoso.Crm.Empty        Sandbox
-Contoso.Crm.Orphan       Sandbox
-Contoso.Crm.Plugins      Sandbox
 TestPlugins              Sandbox
 WorkInProgress.Plugins   Sandbox
 ```
 
-`Microsoft.Contoso.Extensions` is missing, and is counted on the switch instead - the count
-there is the fixture's one plus however many Microsoft really ships into the environment.
-It is signed with the Contoso key, so nothing about its signature says Microsoft; it is
-hidden on the strength of its name alone, and the switch is the only thing that brings it
-back.
+That is the whole point of the default: it is what a developer sees in the environment
+they develop in, and both rows have source in the folder they are about to point the tool
+at. Nothing in the list says which is which - there is no column for it - so the switch
+counts beside the button are where the rest is accounted for:
 
-Ticking all five:
+```
+[Load Assemblies]  □ Microsoft's (65)  □ Managed (3)
+```
+
+- **Managed (3)** is `Contoso.Crm.Plugins`, `Contoso.Crm.Orphan` and `Contoso.Crm.Empty`.
+- **Microsoft's (65)** is the fixture's `Microsoft.Contoso.Extensions` plus however many
+  first party assemblies the environment really carries - sixty four in a fresh Developer
+  environment, which is the number the switch exists for.
+
+`Microsoft.Contoso.Extensions` is managed *and* named Microsoft, and is counted only once,
+on the Microsoft switch. That is the fixture's proof that the two tests are asked in the
+right order: tick **Microsoft's** with **Managed** still off and it appears anyway. Had
+both applied to the same row it could not, and the switch would look broken. It is signed
+with the Contoso key, so nothing about its signature says Microsoft; it is hidden on the
+strength of its name alone.
+
+Ticking both rows in the default list:
+
+```
+2 assemblies · 15 of 15 classes
+```
+
+Turning **Managed** on and ticking all five:
 
 ```
 5 assemblies · 21 of 21 classes · 1 with no steps
@@ -203,22 +246,35 @@ accounted for.
 
 Things worth doing to the list once it is loaded:
 
-- Type `Contoso` in the filter. Three rows, and the "All" box ticks those three and goes
-  indeterminate rather than checked. Turn the Microsoft switch on and the same filter
-  shows four: the switch and the filter compose rather than override each other.
-- Nothing about `WorkInProgress.Plugins` sets it apart in this list, which is the point:
-  it is unmanaged and in no solution, and the list has no column that could say so.
+- Type `Contoso` in the filter with both switches off and nothing ticked. **No rows at
+  all**, and `Nothing matches.` on the status line - which is right rather than broken:
+  every Contoso assembly was shipped. Turn **Managed** on and the same filter shows three,
+  with the "All" box ticking those three and going indeterminate rather than checked. Turn
+  **Microsoft's** on as well and it shows four. The switches and the filter compose rather
+  than override each other.
 - Tick `TestPlugins`, then filter it out of view. It stays ticked, its classes stay in the
   list under their own heading, and the status line says `· 1 out of view`.
+- Tick all five with **Managed** on, then turn it back off. The three managed rows leave
+  the list and stay ticked - their classes are still there under their own headings, and
+  the status line says `· 3 out of view`. A switch hides exactly as the filter box does,
+  and neither ever unticks anything.
 
 ## The class list and the preview
 
 Classes are grouped under the assembly they were registered from, assemblies in name
-order and classes within one in type name order. That is worth checking rather than
-assuming, because the environment hands all of the types back in one list sorted by type
-name, in which `Contoso.Crm.Alpha`, `Contoso.Crm.Bravo` and `Contoso.Crm.Charlie` belong
-to *two different assemblies* in alternation. Both the list and the preview have to
-regroup them, so each assembly's `// =====` heading appears exactly once:
+order and classes within one in type name order. The default list already has two groups
+to get right:
+
+```
+// ===== TestPlugins
+// ===== WorkInProgress.Plugins
+```
+
+The harder case is behind the **Managed** switch, and is worth checking rather than
+assuming: the environment hands all of the types back in one list sorted by type name, in
+which `Contoso.Crm.Alpha`, `Contoso.Crm.Bravo` and `Contoso.Crm.Charlie` belong to *two
+different assemblies* in alternation. Both the list and the preview have to regroup them,
+so with all five ticked each assembly's `// =====` heading appears exactly once:
 
 ```
 // ===== Contoso.Crm.Orphan
@@ -231,6 +287,11 @@ regroup them, so each assembly's `// =====` heading appears exactly once:
 under the TestPlugins heading and the last under Contoso's.
 
 ## TestPlugins
+
+Everything below is registered by hand, in no solution, and none of it reads any
+differently for that — which is the claim worth making, because the documenter is not
+supposed to be able to tell. The one place the route shows through is `EscapedText`, and
+it shows through in a line ending.
 
 ### SimpleCreate
 
@@ -341,8 +402,9 @@ completely ordinary. `As <name>` is whoever ran `register.ps1`.
 ### EscapedText
 
 Quote, backslash, tab and newline through the C# literal writer. The step's description
-arrives with `\n` rather than `\r\n`: XML normalises line endings inside an element, so
-what went into the solution as CRLF comes back as LF.
+arrives with `\r\n` intact, because the Web API stores exactly the text it was given.
+`Contoso.Crm.Charlie` carries the same shape of description through a solution and comes
+back with `\n`, so the pair is what pins the difference.
 
 The summary comment says none of this — names, descriptions and configuration are
 deliberately left out of it - which is also what keeps the doc comment well formed.
@@ -351,7 +413,7 @@ deliberately left out of it - which is also what keeps the doc comment well form
 [Plugin(Description = "Quote \" backslash \\ ampersand & angle <tag> all in one description.")]
 [Step("Update", "account", Stages.PostOperation, ExecutionMode.Synchronous,
     Name = "Quote \" backslash \\ ampersand & angle <tag>",
-    Description = "First line, with a tab\there.\nSecond line.",
+    Description = "First line, with a tab\there.\r\nSecond line.",
     Configuration = "C:\\path\\to \"somewhere\" & back")]
 ```
 ```csharp
@@ -418,11 +480,13 @@ come back from a run byte for byte identical.
 
 ## Contoso.Crm.Plugins
 
-### Alpha and Charlie
+Behind the **Managed** switch, along with the rest of what somebody shipped.
 
-Two ordinary classes in the second vendor's assembly, documented exactly as if they were
-in the first. What they are really for is the interleave described above: sorted by type
-name they sit either side of `Contoso.Crm.Bravo`, which belongs to `Contoso.Crm.Orphan`.
+### Alpha
+
+An ordinary class in the second vendor's assembly, documented exactly as if it were in the
+first. What it is really for is the interleave described above: sorted by type name, Alpha
+and Charlie sit either side of `Contoso.Crm.Bravo`, which belongs to `Contoso.Crm.Orphan`.
 
 ```csharp
 [Plugin]
@@ -432,15 +496,32 @@ name they sit either side of `Contoso.Crm.Bravo`, which belongs to `Contoso.Crm.
 /// Sync Post-Create of contact (order 1): (all columns)
 ```
 
+### Charlie
+
+Everything the managed route can say that the unmanaged one cannot, on one step. It is
+**disabled**, which no solution can express - so it is imported in the companion without
+`--activate-plugins`, which is the only reason there is a third solution. And its
+description went in carrying CRLF and comes back with LF, because XML normalises line
+endings inside an element:
+
 ```csharp
 [Plugin]
-[Step("Update", "contact", "jobtitle", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "contact", "jobtitle", Stages.PostOperation, ExecutionMode.Synchronous,
+    Description = "Held back until Contoso ships it.\nSecond line.")]
 ```
 ```csharp
-/// Sync Post-Update of contact (order 1): jobtitle
+/// Sync Post-Update of contact (order 1, disabled): jobtitle
 ```
 
+Compare the `\n` here with the `\r\n` in `TestPlugins.EscapedText`: same shape of text,
+two registration routes, and the difference survives all the way into the file the tool
+writes. And compare `(order 1, disabled)` with `HalfFinished`'s: a step switched off by a
+solution import and a step switched off on the record have to read identically.
+
 ## Cases that need more than one assembly
+
+Both of these straddle the **Managed** switch, which is the interesting part: one half of
+each is in the default list and the other half arrived in a solution.
 
 ### Shared.Twin - one file, two assemblies
 
@@ -449,6 +530,9 @@ name they sit either side of `Contoso.Crm.Bravo`, which belongs to `Contoso.Crm.
 what a shared base library looks like once it has been deployed twice, and the documenter
 knows nothing about assemblies when it goes looking for a file: both registrations resolve
 to this one `.cs`.
+
+With **Managed** off only TestPlugins' registration is in view, so the file is written
+once and a second run leaves it alone. Turn the switch on and the fight below starts.
 
 Both are written, in assembly order, and the second is what survives. Contoso's is written
 first, TestPlugins' second, so the file ends up saying:
@@ -486,6 +570,12 @@ ambiguous and **neither file may be modified**:
 //   Rival (2 files)
 ```
 
+That is with **Managed** on. With it off, only `TestPlugins.Rival` is registered anywhere
+in view — and it is *still* ambiguous, reported once instead of twice, because two files
+under `tests\src` declare a class called `Rival` whatever the environment has been asked
+about. Ambiguity is a property of the source tree, not of the registration, and hiding
+half the registrations does not make the tool any surer which file it meant.
+
 Alpha.Duplicate is the same failure inside one assembly; Rival is the same failure where
 the answer was available and was not used.
 
@@ -503,6 +593,22 @@ and the write report puts both under:
 
 The preview showing them is deliberate: nothing has failed until you press Write.
 
+`Ghost` is also where impersonation is pinned on the managed route — the solution carries
+a user's full name and the importer resolves it, where `TestPlugins.DisabledAndImpersonated`
+gets there by id over the Web API. Both come out saying the same thing, and `As <name>` is
+whoever ran `register.ps1`:
+
+```csharp
+[Plugin]
+[Step("Update", "task", Stages.PostOperation, ExecutionMode.Synchronous, ExecutionOrder = 2)]
+```
+```csharp
+/// Sync Post-Update of task (order 2, As Kosta Koniev): (all columns)
+```
+
+In attribute mode the impersonation is gone, because no attribute can carry it — the same
+suppression `DisabledAndImpersonated` pins, here on a class with no file to write to.
+
 ## Contoso.Crm.Empty - registered, no steps
 
 `Contoso.Crm.Empty.Idle` and `Contoso.Crm.Empty.Spare` are plugin types with no steps in
@@ -512,9 +618,10 @@ classes and no preview - and must still say so, on the status line, as `· 1 wit
 Unticking and re-ticking it must not send another query: an assembly that turned out to
 have nothing is remembered as having been asked.
 
-## Microsoft.Contoso.Extensions - named Microsoft, signed by Contoso
+## Microsoft.Contoso.Extensions - named Microsoft, signed by Contoso, shipped by Comentality
 
-Hidden until the Microsoft switch is on, and once it is on, entirely ordinary:
+Hidden until the Microsoft switch is on - **whatever the Managed switch is set to**, which
+is the disjointness the two switches depend on - and once it is on, entirely ordinary:
 
 ```csharp
 [Plugin]
@@ -529,11 +636,12 @@ faked, because the import validates the strong name and nobody outside Microsoft
 with those. That branch of `IsMicrosoft` can only be judged against whatever first party
 assemblies the environment really has, which is what the count on the switch is for.
 
-## WorkInProgress.Plugins - registered by hand, in no solution
+## WorkInProgress.Plugins - the second assembly registered by hand
 
-The whole assembly has to come out looking exactly like the ones that arrived in
-solutions. Anything that differs is a bug, because nothing the documenter reads is
-supposed to know how a registration got there.
+In the default list beside `TestPlugins`, and there to make sure the default list is a
+list rather than a row: two groups in the class list, two `// =====` headings in the
+preview, and an "All" box that means both. Its classes read like a feature somebody is
+halfway through, which is the situation the whole tool is for.
 
 ### NewFeature
 
@@ -564,7 +672,7 @@ than off which solution imported it, and has to read identically to
 
 ### Scratch
 
-The one step in the fixture whose name a person typed, sitting beside two that kept the
+A step whose name a person typed, sitting beside two in the same assembly that kept the
 name the registration tool offered - so `Name` is emitted here and suppressed there,
 against a default string produced the same way a user's is. Its pre image is on a
 `Delete`, which is the only place a pre image is much use.
@@ -598,7 +706,23 @@ matter. It is pinned here as behaviour, not endorsed as correct.
 
 ## The write report
 
-With all six assemblies ticked and the source folder set to `tests\src`, all twenty two
+Two reports are worth having, because the tool has two states worth being in.
+
+**The default list**, both switches off, both assemblies ticked, source folder `tests\src`
+- fifteen classes, and the only failures are the ones the source tree causes:
+
+```
+// Updated (13)
+//   ... every class with a file, Twin once
+// Ambiguous, several files declare the class (2)
+//   Duplicate (2 files)
+//   Rival (2 files)
+```
+
+Run it again and everything says `Already up to date (13)`. This is the run that settles,
+which is what a developer documenting their own assembly should get.
+
+**With Managed and Microsoft's both on** and all six assemblies ticked, all twenty two
 classes are accounted for and pressing Write should produce a report of the shape:
 
 ```
@@ -624,7 +748,8 @@ second time without changing anything and it becomes:
 ```
 
 `Twin` is the one thing that cannot settle: the two registrations overwrite each other on
-every run, for ever.
+every run, for ever - but only while both are in view, which is the difference between
+this report and the one above.
 
 # Deliberately not covered
 
@@ -642,6 +767,15 @@ Worth knowing what the suite does *not* pin, so a gap is not mistaken for a pass
   about what it ought to do.
 - **Assemblies delivered as a plugin package.** The NuGet route registers a
   `pluginpackage`, which nothing in the tool queries.
+- **An unmanaged assembly that is also named Microsoft.** `IsMicrosoft` is asked before
+  `IsManaged`, so such a row would be held back by the Microsoft switch and not appear in
+  the default list. The managed half of that ordering is pinned by
+  `Microsoft.Contoso.Extensions`; the unmanaged half is not, and adding a seventh assembly
+  to say the same thing twice did not seem worth it.
+- **A managed assembly of your own that you still want to document.** The switch exists
+  for it and the Contoso assemblies exercise the path, but "the environment you can reach
+  is not the one you develop in" is a situation, not a record shape - there is nothing in
+  the environment that distinguishes it from an ISV's app.
 
 # Notes from building this
 
@@ -670,11 +804,19 @@ Things that cost time, in case they cost it again:
   every query in `verify.ps1` that names a type also names the assembly it belongs to; one
   that did not would pass against the wrong record.
 - Assembly metadata is generated from the matrix rather than committed, and the public key
-  token is read off the built DLL rather than written down. Five hand maintained copies of
-  the same XML is five chances for one of them to be quietly wrong about a token, and a
+  token is read off the built DLL rather than written down. Four hand maintained copies of
+  the same XML is four chances for one of them to be quietly wrong about a token, and a
   wrong token fails the import in the same way everything else does.
+- XML normalises line endings inside an element, so a description that goes into a
+  solution as CRLF comes back as LF. The Web API keeps what it was given.
+  `Contoso.Crm.Charlie` and `TestPlugins.EscapedText` are the two halves of that, and it
+  is visible in the emitted attribute rather than only in the environment.
+- A step in a solution can run against a plugin type a *different* solution installed: the
+  companion is packed with no assemblies at all, only root components of type 92, and the
+  type its step names arrives with `PluginDocumenterE2EContoso`. It shares that solution's
+  publisher, which is not known to be required and was not worth finding out.
 
-And, from registering the sixth assembly without one:
+And, from registering assemblies without a solution:
 
 - `pac` reads and imports; it deletes solutions and nothing smaller. That is the whole
   reason `dataverse.ps1` exists, and it is a short script rather than a dependency because
@@ -695,3 +837,7 @@ And, from registering the sixth assembly without one:
   on `Create` has to name `Id` as its message property rather than `Target`.
 - `statecode` is its own write. It is made on every registration rather than only for the
   steps meant to be off, so a step somebody disabled by hand comes back enabled.
+- Impersonation is a lookup, so the Web API wants an id where the solution schema wants a
+  full name. `WhoAmI` answers with the caller's id and needs no extra permission, which is
+  the whole of `unmanaged.ps1`'s handling of it. Clearing one again would be a `DELETE`
+  against the reference rather than a null in the body, which is why nothing here does.

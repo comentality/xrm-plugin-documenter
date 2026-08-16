@@ -6,6 +6,13 @@
     ones it hides, which ones it groups a class under, which class a file belongs to when
     two assemblies claim the same name - are pinned by something other than opinion.
 
+    Two of the six are in no solution at all, because that is what the documenter is
+    pointed at: an assembly somebody is in the middle of writing, built and registered
+    straight into a development environment. Those are the rows the tool shows by default.
+    The other four arrived in managed solutions - shipped by somebody, source elsewhere -
+    and are behind the Managed switch, which is where the vendor, orphan and stepless
+    cases now live.
+
     build.ps1 turns this file into the assembly metadata, the solution manifests and one
     SdkMessageProcessingStep xml per step, so it is the single place that says what the
     environment will look like when register.ps1 has finished.
@@ -87,11 +94,14 @@
         }
     )
 
-    # Every step marked Disabled, from any assembly, lands here instead.
+    # Every step marked Disabled *in a solution* lands here instead. An unmanaged step is
+    # simply written disabled, so only the managed assemblies reach this. Its publisher is
+    # Contoso's because the one step it carries runs against a Contoso plugin type, and a
+    # solution that installs nothing has no reason to belong to a second publisher.
     DisabledSolution = @{
         Name      = 'PluginDocumenterE2EDisabled'
         Title     = 'Plugin Documenter E2E Fixtures (steps left disabled)'
-        Publisher = 'Comentality'
+        Publisher = 'Contoso'
     }
 
     Assemblies = @(
@@ -100,12 +110,17 @@
         # The original fixture: every shape of step, image and free text the emitters have
         # to describe. Signed with its own key, which is what makes it a different vendor
         # from the Contoso assemblies as far as anything visible is concerned.
+        #
+        # In no solution, and deliberately so: this is the assembly with everything the
+        # emitters have to describe, and the documenter's own default view is the unmanaged
+        # one. Registering it any other way would have put every interesting case behind a
+        # switch nobody turns on to do their actual work.
         @{
             Name      = 'TestPlugins'
             Block     = '1'
             Namespace = 'TestPlugins'
             Project   = 'src\TestPlugins\TestPlugins.csproj'
-            Solution  = 'PluginDocumenterE2E'
+            Solution  = $null
             Source    = 'src\TestPlugins'
 
             Types = @(
@@ -298,10 +313,19 @@
                     Id = '01'; Type = 'Contoso.Crm.Alpha'
                     Message = 'Create'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 1
                 }
+                # Everything about this step that only the managed route can say. It is
+                # disabled, which a solution has no element for, so it is imported in the
+                # companion without --activate-plugins - the one thing the third solution
+                # exists to prove. And its description arrives carrying CRLF, which the
+                # solution route does not keep: XML normalises line endings inside an
+                # element, so the documenter emits \n here and \r\n for the same text
+                # written over the Web API into TestPlugins.EscapedText.
                 @{
                     Id = '02'; Type = 'Contoso.Crm.Charlie'
                     Message = 'Update'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 1
                     Filter = 'jobtitle'
+                    Description = "Held back until Contoso ships it.`r`nSecond line."
+                    Disabled = $true
                 }
                 # The other TestPlugins.Rival. Two files, two assemblies, one short name.
                 @{
@@ -337,9 +361,14 @@
                     Id = '01'; Type = 'Contoso.Crm.Bravo'
                     Message = 'Create'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 1
                 }
+                # Impersonated, because the solution route carries that as a user's full
+                # name and the unmanaged route as an id, and both have to end up saying the
+                # same thing. Ghost has no source, so the fact shows up in the preview and
+                # in no file - which is all this needs to keep the name route exercised.
                 @{
                     Id = '02'; Type = 'Contoso.Crm.Ghost'
                     Message = 'Update'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 2
+                    Impersonate = $true
                 }
             )
         }
@@ -368,12 +397,22 @@
         # first and falls back to the name, so this is the assembly the fallback gets
         # wrong: hidden until the Microsoft switch is on, and perfectly documentable once
         # it is.
+        #
+        # Shipped by Comentality, which makes all three disagree - the name says Microsoft,
+        # the signature says Contoso, the publisher says Comentality - and the documenter
+        # reads only the first two. It is also the only assembly this solution owns, so
+        # the two publishers survive TestPlugins leaving the solution route.
+        #
+        # Managed, on purpose: it is Microsoft's by name and shipped by somebody, and
+        # because IsMicrosoft is asked before IsManaged it appears the moment the Microsoft
+        # switch goes on however the Managed switch is set. That order is the reason
+        # neither switch can be made to show nothing, and this row is what proves it.
         @{
             Name      = 'Microsoft.Contoso.Extensions'
             Block     = '5'
             Namespace = 'Microsoft.Contoso'
             Project   = 'src\MsContosoExtensions\MsContosoExtensions.csproj'
-            Solution  = 'PluginDocumenterE2EContoso'
+            Solution  = 'PluginDocumenterE2E'
             Source    = 'src\MsContosoExtensions'
 
             Types = @(
@@ -390,12 +429,11 @@
         }
 
         # ======================================================= WorkInProgress.Plugins
-        # In no solution at all. Registered record by record against the environment, the
-        # way the plugin registration tool registers a plugin somebody is still writing -
-        # which is the situation the documenter exists for, and the only one every other
-        # assembly here fails to be. Everything about it is unmanaged, its steps carry the
-        # names the registration tool generates, and the disabled one is disabled on the
-        # record rather than by which solution it was imported in.
+        # The second assembly in no solution, and the reason there are two: a developer's
+        # environment holds more than one thing they are working on, and the default view
+        # has to group classes under two headings without a switch being touched.
+        # TestPlugins is the one with every shape of step; this is the one whose classes
+        # read like a half finished feature, down to a step name somebody typed by hand.
         @{
             Name      = 'WorkInProgress.Plugins'
             Block     = '6'
