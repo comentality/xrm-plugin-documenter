@@ -21,7 +21,7 @@ namespace PluginDocumenter
 
         /// <summary>
         /// The assemblies being documented. Kept apart from the list, which shows only what the
-        /// Microsoft switch and the filter box let through, and outlives both.
+        /// two switches and the filter box let through, and outlives all three.
         /// </summary>
         private readonly HashSet<Guid> _checkedAssemblies = new HashSet<Guid>();
 
@@ -44,6 +44,7 @@ namespace PluginDocumenter
         private SplitContainer _leftSplit;
         private Button _btnLoadAssemblies;
         private CheckBox _chkShowMicrosoft;
+        private CheckBox _chkShowManaged;
         private TextBox _txtFilter;
         private CheckBox _chkAllAssemblies;
         private Label _lblStatus;
@@ -125,6 +126,18 @@ namespace PluginDocumenter
             };
             _chkShowMicrosoft.CheckedChanged += (s, e) => RenderAssemblies();
 
+            // Everything else that arrived in a solution: an ISV's app, or your own in a build that
+            // is no longer the one on disk. Documenting one is a real thing to want - the only
+            // environment you can reach is not always the one you develop in - but it is the
+            // exception, so it is off by default and one click away.
+            _chkShowManaged = new CheckBox
+            {
+                Text = "Managed",
+                AutoSize = true,
+                Margin = new Padding(12, 5, 0, 4)
+            };
+            _chkShowManaged.CheckedChanged += (s, e) => RenderAssemblies();
+
             // No signature test settles every environment, and an ISV's app is not Microsoft's
             // and not yours either. Typing your own name is the answer that never needs one.
             var lblFilter = new Label
@@ -167,7 +180,7 @@ namespace PluginDocumenter
 
             // Both on one wrapping row of their own: in a cell of the grid the button would set the
             // width of the whole first column and the filter box would start where it ends.
-            var loadRow = Row(_btnLoadAssemblies, _chkShowMicrosoft);
+            var loadRow = Row(_btnLoadAssemblies, _chkShowMicrosoft, _chkShowManaged);
             leftToolbar.Controls.Add(loadRow, 0, 0);
             leftToolbar.SetColumnSpan(loadRow, 2);
             leftToolbar.Controls.Add(lblFilter, 0, 1);
@@ -404,8 +417,14 @@ namespace PluginDocumenter
         /// </summary>
         private void LaySplitters()
         {
+            // 400 is what the load row measures: the button, both switches with their counts
+            // spelled out, and the margins between them. A share of the window was the rule before
+            // there were two switches, and it put the second one on a line of its own on any window
+            // narrower than about 1250. The pane has nothing to do with the extra width anyway -
+            // assembly and class names are short, and the preview is what wants the rest. Below the
+            // floor the switches wrap rather than being clipped.
             _splittersLaid =
-                LaySplit(_mainSplit, 250, 340, Math.Min(360, (int)(_mainSplit.Width * 0.32))) &
+                LaySplit(_mainSplit, 270, 340, 400) &
                 // Panel1 carries the toolbar as well as the list, so its minimum is that much
                 // taller than the class list's below it.
                 LaySplit(_leftSplit, 170, 90, (int)(_leftSplit.Height * 0.5));
@@ -482,9 +501,16 @@ namespace PluginDocumenter
         }
 
         /// <summary>
-        /// Fills the list from what was loaded. An environment carries dozens of Microsoft's own
-        /// assemblies and one or two of yours, so they are held back by default, with the count on
-        /// the switch that brings them back rather than the list quietly being short.
+        /// Fills the list from what was loaded. What is left by default is the unmanaged
+        /// registrations - a plugin somebody is in the middle of writing, which is what this tool is
+        /// for. An environment carries dozens of Microsoft's assemblies and however many an ISV
+        /// installed, and neither has source in anybody's folder, so both are held back with the
+        /// count on the switch that brings them back rather than the list quietly being short.
+        ///
+        /// The two switches govern disjoint sets, which is why the tests are asked in this order
+        /// rather than chained: every one of Microsoft's is managed too, and if both applied to the
+        /// same row then ticking "Microsoft's" while Managed was off would show nothing at all and
+        /// the switch would look broken.
         /// </summary>
         private void RenderAssemblies()
         {
@@ -493,9 +519,16 @@ namespace PluginDocumenter
                 ? "Microsoft's"
                 : "Microsoft's (" + microsoft + ")";
 
+            var managed = _assemblies.Count(a => a.IsManaged && !a.IsMicrosoft);
+            _chkShowManaged.Text = managed == 0
+                ? "Managed"
+                : "Managed (" + managed + ")";
+
             var filter = _txtFilter.Text.Trim();
             var visible = _assemblies
-                .Where(a => _chkShowMicrosoft.Checked || !a.IsMicrosoft)
+                .Where(a => a.IsMicrosoft
+                    ? _chkShowMicrosoft.Checked
+                    : _chkShowManaged.Checked || !a.IsManaged)
                 .Where(a => filter.Length == 0
                             || (a.Name != null && a.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0))
                 .ToList();

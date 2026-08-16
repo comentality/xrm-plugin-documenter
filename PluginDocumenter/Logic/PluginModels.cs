@@ -12,6 +12,16 @@ namespace PluginDocumenter.Logic
         public int IsolationMode;
 
         /// <summary>
+        /// Whether this arrived inside a managed solution. The tool is pointed at a plugin somebody
+        /// is in the middle of writing - built, registered straight into a development environment,
+        /// source open in the editor - and that registration is unmanaged. Managed means it was
+        /// shipped by somebody: Microsoft, an ISV, or you, in a build that is no longer the one on
+        /// disk. It is a hint about whose source this is, never a prohibition; nothing here writes
+        /// to the environment, so there is no operation a managed assembly would refuse.
+        /// </summary>
+        public bool IsManaged;
+
+        /// <summary>
         /// Microsoft's strong name keys. Plugin assemblies must be signed, and these are keys
         /// nobody outside Microsoft can sign with, so a match is proof rather than a guess.
         /// </summary>

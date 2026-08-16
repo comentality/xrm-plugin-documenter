@@ -173,6 +173,9 @@ namespace PluginDocumenter.UiHarness
                 // Nothing registered against it, and outside the sandbox besides.
                 NewAssembly("Fabrikam.Shared.Plugins", "0f2c9a1b7d3e4655", 1),
                 NewAssembly("MsContoso.Extensions", "9d8c7b6a5e4f3021", 2),
+                // An ISV's app: neither Microsoft's nor yours, and the reason the Managed switch
+                // needs a bucket of its own rather than being read off the signature.
+                NewAssembly("Northwind.Suite.Plugins", "4c5d6e7f80912a3b", 2, managed: true),
             };
 
             // Enough of Microsoft's own to make the point the switch exists for: they outnumber
@@ -189,20 +192,21 @@ namespace PluginDocumenter.UiHarness
 
             foreach (var name in microsoft)
             {
-                own.Add(NewAssembly(name, "31bf3856ad364e35", 2));
+                own.Add(NewAssembly(name, "31bf3856ad364e35", 2, managed: true));
             }
 
             return own;
         }
 
-        private static AssemblyInfo NewAssembly(string name, string key, int isolation)
+        private static AssemblyInfo NewAssembly(string name, string key, int isolation, bool managed = false)
         {
             return new AssemblyInfo
             {
                 Id = Guid.NewGuid(),
                 Name = name,
                 PublicKeyToken = key,
-                IsolationMode = isolation
+                IsolationMode = isolation,
+                IsManaged = managed
             };
         }
 

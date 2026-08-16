@@ -12,15 +12,17 @@ namespace PluginDocumenter.Logic
     public static class RegistrationQuery
     {
         /// <summary>
-        /// Every assembly the environment will admit to, Microsoft's included. Telling those apart
-        /// is <see cref="AssemblyInfo.IsMicrosoft"/>'s job and the caller's decision; there is no
-        /// server side filter that does it, which is why this no longer pretends to have one.
+        /// Every assembly the environment will admit to, Microsoft's and every other shipped one
+        /// included. Which of them to show is the caller's decision, made from
+        /// <see cref="AssemblyInfo.IsMicrosoft"/> and <see cref="AssemblyInfo.IsManaged"/>; there is
+        /// no server side filter that does it, which is why this no longer pretends to have one.
+        /// Filtering here would also cost the counts the switches carry.
         /// </summary>
         public static List<AssemblyInfo> GetAssemblies(IOrganizationService service)
         {
             var query = new QueryExpression("pluginassembly")
             {
-                ColumnSet = new ColumnSet("pluginassemblyid", "name", "isolationmode", "publickeytoken"),
+                ColumnSet = new ColumnSet("pluginassemblyid", "name", "isolationmode", "publickeytoken", "ismanaged"),
                 Criteria =
                 {
                     // Internal plumbing the platform registers for itself. Steps on these are not
@@ -39,7 +41,8 @@ namespace PluginDocumenter.Logic
                     Id = e.Id,
                     Name = e.GetAttributeValue<string>("name"),
                     PublicKeyToken = e.GetAttributeValue<string>("publickeytoken"),
-                    IsolationMode = GetOptionSet(e, "isolationmode", 2)
+                    IsolationMode = GetOptionSet(e, "isolationmode", 2),
+                    IsManaged = e.GetAttributeValue<bool?>("ismanaged") ?? false
                 })
                 .ToList();
         }
