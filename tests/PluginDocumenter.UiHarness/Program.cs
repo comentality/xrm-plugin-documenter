@@ -15,7 +15,12 @@ namespace PluginDocumenter.UiHarness
     /// layout work can be checked without XrmToolBox and without a Dataverse connection. Run it
     /// through ui.ps1 rather than directly.
     ///
-    ///   uiharness.exe &lt;width&gt; &lt;height&gt; &lt;output.png&gt;
+    ///   uiharness.exe &lt;width&gt; &lt;height&gt; &lt;output.png&gt; [comment] [source folder] [window title]
+    ///
+    /// The three optional arguments exist for the screenshots in the README, which want the other
+    /// output mode, a folder path that is somebody's project rather than this machine's, and a
+    /// title that names the tool. Everything they change is a value the control would have been
+    /// given anyway; nothing about the render is faked for the camera.
     ///
     /// The control is driven the way XrmToolBox drives it - construct, dock, show - so anything
     /// the real tool does on Load and Resize happens here too. Sample data goes in through
@@ -31,13 +36,17 @@ namespace PluginDocumenter.UiHarness
         {
             if (args.Length < 3)
             {
-                Console.Error.WriteLine("usage: uiharness.exe <width> <height> <output.png>");
+                Console.Error.WriteLine(
+                    "usage: uiharness.exe <width> <height> <output.png> [comment] [source folder] [window title]");
                 return 2;
             }
 
             var width = int.Parse(args[0]);
             var height = int.Parse(args[1]);
             var outPath = args[2];
+            var comment = args.Length > 3 && args[3].Equals("comment", StringComparison.OrdinalIgnoreCase);
+            var folder = args.Length > 4 ? args[4] : null;
+            var title = args.Length > 5 ? args[5] : "Plugin Documenter UI harness";
 
             // Without this a layout mistake surfaces as a modal error dialog on a machine nobody
             // is looking at, and the run just hangs until it is killed.
@@ -51,7 +60,7 @@ namespace PluginDocumenter.UiHarness
             var control = new PluginDocumenterControl { Dock = DockStyle.Fill };
             var form = new Form
             {
-                Text = "Plugin Documenter UI harness",
+                Text = title,
                 ClientSize = new Size(width, height),
                 StartPosition = FormStartPosition.Manual,
                 Location = new Point(0, 0),
@@ -61,7 +70,7 @@ namespace PluginDocumenter.UiHarness
 
             form.Shown += (s, e) =>
             {
-                try { Populate(control); }
+                try { Populate(control, comment, folder); }
                 catch (Exception ex) { failures.Add(ex.ToString()); }
 
                 // Let the form settle before grabbing it: the lists redistribute their columns on
@@ -139,7 +148,7 @@ namespace PluginDocumenter.UiHarness
         /// the screenshot is meant to show - the Microsoft count on the switch, the status line,
         /// the grouping, the preview - is computed on the way from one to the other.
         /// </summary>
-        private static void Populate(PluginDocumenterControl control)
+        private static void Populate(PluginDocumenterControl control, bool comment, string folder)
         {
             var assemblies = SampleAssemblies();
             control.GetType().GetField("_assemblies", Priv).SetValue(control, assemblies);
@@ -156,9 +165,16 @@ namespace PluginDocumenter.UiHarness
                 typesByAssembly[assembly.Id] = SampleTypes(assembly);
             }
 
-            // A folder that exists, so the buttons render enabled. It is the harness's own output
-            // folder; nothing is written to it.
-            Field<TextBox>(control, "_txtFolder").Text = AppDomain.CurrentDomain.BaseDirectory;
+            // A folder that exists, so the buttons render enabled - the control greys them out and
+            // says so otherwise, which is the honest render for a path that is not there. Defaults
+            // to the harness's own output folder; nothing is written to either.
+            Field<TextBox>(control, "_txtFolder").Text =
+                folder ?? AppDomain.CurrentDomain.BaseDirectory;
+
+            if (comment)
+            {
+                Field<RadioButton>(control, "_rbComment").Checked = true;
+            }
 
             Invoke(control, "RenderAssemblies");
             Invoke(control, "RenderTypes");

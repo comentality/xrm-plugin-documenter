@@ -8,21 +8,35 @@
 #   .\ui.ps1 -Size 1600x1000          # one size
 #   .\ui.ps1 -Size 1280x900,820x620   # several
 #   .\ui.ps1 -NoBuild                 # reuse the last build
+#   .\ui.ps1 -Docs                    # regenerate the two screenshots in the README
 #
 # It drives the real control, so it screenshots real bugs: a splitter that throws while being set
 # up shows here as a failed run rather than as a broken tab in XrmToolBox.
+#
+# -Docs writes assets\ui-attributes.png and assets\ui-comment.png, which README.md and docs\ point
+# at. They are the same control and the same sample data as every other shot; only the window
+# title, the source folder shown in the box and the output mode differ, so a change to the layout
+# turns up in the README by re-running this rather than by somebody remembering to.
 
 param(
     [string[]]$Size = @("1280x900", "820x620"),
     [string]$OutputDir,
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$Docs
 )
 
 $ErrorActionPreference = "Stop"
 
 $project = Join-Path $PSScriptRoot "PluginDocumenter.UiHarness\PluginDocumenter.UiHarness.csproj"
 $exe     = Join-Path $PSScriptRoot "PluginDocumenter.UiHarness\bin\Debug\net48\PluginDocumenter.UiHarness.exe"
-if (-not $OutputDir) { $OutputDir = Join-Path $PSScriptRoot ".ui" }
+if (-not $OutputDir) {
+    $OutputDir = if ($Docs) { Join-Path (Split-Path $PSScriptRoot -Parent) "assets" } else { Join-Path $PSScriptRoot ".ui" }
+}
+
+# A path that reads like somebody's plugin project rather than like this machine. It has to exist,
+# because the control greys its buttons out and says so for a folder that does not - which is the
+# right render, and the wrong screenshot. Nothing is ever written to it.
+$docsFolder = "C:\src\Contoso.Plugins\Plugins"
 
 if (-not $NoBuild) {
     dotnet build $project -c Debug -v q --nologo
@@ -31,33 +45,60 @@ if (-not $NoBuild) {
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
+# Each shot is width, height, output path, and then what makes it different from the last one.
+$shots = if ($Docs) {
+    @(
+        @{ Size = "1280x860"; Name = "ui-attributes.png"; Mode = "attributes"; Folder = $docsFolder; Title = "Plugin Documenter" }
+        @{ Size = "1280x860"; Name = "ui-comment.png";    Mode = "comment";    Folder = $docsFolder; Title = "Plugin Documenter" }
+    )
+} else {
+    @($Size | ForEach-Object { @{ Size = $_; Name = $null; Mode = "attributes"; Folder = $null; Title = $null } })
+}
+
+$madeDocsFolder = $false
+if ($Docs -and -not (Test-Path $docsFolder)) {
+    New-Item -ItemType Directory -Force -Path $docsFolder | Out-Null
+    $madeDocsFolder = $true
+}
+
 $failed = $false
-foreach ($s in $Size) {
-    if ($s -notmatch '^\s*(\d+)\s*[x×]\s*(\d+)\s*$') { throw "Size must look like 1280x900, got '$s'" }
-    $width  = [int]$Matches[1]
-    $height = [int]$Matches[2]
+try {
+    foreach ($shot in $shots) {
+        if ($shot.Size -notmatch '^\s*(\d+)\s*[x×]\s*(\d+)\s*$') { throw "Size must look like 1280x900, got '$($shot.Size)'" }
+        $width  = [int]$Matches[1]
+        $height = [int]$Matches[2]
 
-    $path = Join-Path $OutputDir "$($width)x$($height).png"
-    Remove-Item "$path*" -ErrorAction SilentlyContinue
+        $name = if ($shot.Name) { $shot.Name } else { "$($width)x$($height).png" }
+        $path = Join-Path $OutputDir $name
+        Remove-Item "$path*" -ErrorAction SilentlyContinue
 
-    # Out of process with a timeout: a layout that deadlocks the message loop should fail the run
-    # rather than hang it.
-    $p = Start-Process $exe -ArgumentList $width, $height, $path -PassThru
-    if (-not $p.WaitForExit(30000)) {
-        $p.Kill()
-        Write-Host "TIMED OUT  $($width)x$($height)" -ForegroundColor Red
-        $failed = $true
-        continue
+        # Quoted, because a path or a title with a space in it otherwise arrives as two arguments
+        # and the window ends up titled "Plugin".
+        $arguments = @($width, $height, "`"$path`"", $shot.Mode)
+        if ($shot.Folder) { $arguments += "`"$($shot.Folder)`"" }
+        if ($shot.Title)  { $arguments += "`"$($shot.Title)`"" }
+
+        # Out of process with a timeout: a layout that deadlocks the message loop should fail the
+        # run rather than hang it.
+        $p = Start-Process $exe -ArgumentList $arguments -PassThru
+        if (-not $p.WaitForExit(30000)) {
+            $p.Kill()
+            Write-Host "TIMED OUT  $name" -ForegroundColor Red
+            $failed = $true
+            continue
+        }
+
+        if ($p.ExitCode -ne 0) {
+            Write-Host "FAILED     $name" -ForegroundColor Red
+            if (Test-Path "$path.error.txt") { Get-Content "$path.error.txt" | Select-Object -First 12 }
+            $failed = $true
+            continue
+        }
+
+        Write-Host "$($width)x$($height)  ->  $path"
     }
-
-    if ($p.ExitCode -ne 0) {
-        Write-Host "FAILED     $($width)x$($height)" -ForegroundColor Red
-        if (Test-Path "$path.error.txt") { Get-Content "$path.error.txt" | Select-Object -First 12 }
-        $failed = $true
-        continue
-    }
-
-    Write-Host "$($width)x$($height)  ->  $path"
+} finally {
+    if ($madeDocsFolder) { Remove-Item $docsFolder -Force -ErrorAction SilentlyContinue }
 }
 
 if ($failed) { exit 1 }
