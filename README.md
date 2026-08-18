@@ -1,4 +1,4 @@
-# Plugin Documenter
+# ![](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/PluginDocumenter/icon.png) Plugin Documenter
 
 An [XrmToolBox](https://www.xrmtoolbox.com/) tool that documents your Dataverse plugin
 step registrations **in your C# source**.
