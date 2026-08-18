@@ -1,5 +1,7 @@
 # ![](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/PluginDocumenter/icon.png) Plugin Documenter
 
+[![NuGet](https://img.shields.io/nuget/v/Comentality.PluginDocumenter)](https://www.nuget.org/packages/Comentality.PluginDocumenter)
+
 An [XrmToolBox](https://www.xrmtoolbox.com/) tool that documents your Dataverse plugin
 step registrations **in your C# source**.
 
@@ -23,6 +25,9 @@ against the modern attribute model.
 
 **Tool Library** in XrmToolBox → search for **Plugin Documenter** → **Install**. Nothing
 else to set up, and nothing to configure.
+
+The Tool Library installs it from nuget, where it lives as
+[`Comentality.PluginDocumenter`](https://www.nuget.org/packages/Comentality.PluginDocumenter).
 
 ## What it does
 
