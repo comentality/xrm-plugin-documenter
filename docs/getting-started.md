@@ -2,11 +2,11 @@
 
 ## Install
 
-Plugin Documenter is an [XrmToolBox](https://www.xrmtoolbox.com/) tool, so it installs the
+Plugin Step Codegen is an [XrmToolBox](https://www.xrmtoolbox.com/) tool, so it installs the
 way every other one does:
 
 1. Open XrmToolBox.
-2. **Tool Library** → search for **Plugin Documenter** → **Install**.
+2. **Tool Library** → search for **Plugin Step Codegen** → **Install**.
 3. Restart XrmToolBox when it asks.
 
 It needs XrmToolBox 1.2025.7 or later and the .NET Framework 4.8 runtime that XrmToolBox

@@ -4,14 +4,14 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
-namespace PluginDocumenter
+namespace PluginStepCodegen
 {
     /// <summary>
     /// Minimal C# colouriser for the preview pane. Everything the pane ever shows is this tool's
     /// own output — a few hundred lines at most — so a single regex pass over the whole buffer is
     /// enough, and it keeps the plugin a single dependency-free assembly. XrmToolBox does ship
     /// ScintillaNET, but without the native SciLexer.dll beside it, and the nuspec ships only
-    /// PluginDocumenter.dll.
+    /// PluginStepCodegen.dll.
     /// </summary>
     internal static class CsSyntaxHighlighter
     {

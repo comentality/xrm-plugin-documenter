@@ -1,6 +1,6 @@
-# ![](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/PluginDocumenter/icon.png) Plugin Documenter
+# ![](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/PluginStepCodegen/icon.png) Plugin Step Codegen
 
-[![NuGet](https://img.shields.io/nuget/v/Comentality.PluginDocumenter)](https://www.nuget.org/packages/Comentality.PluginDocumenter)
+[![NuGet](https://img.shields.io/nuget/v/Comentality.PluginStepCodegen)](https://www.nuget.org/packages/Comentality.PluginStepCodegen)
 
 An [XrmToolBox](https://www.xrmtoolbox.com/) tool that documents your Dataverse plugin
 step registrations **in your C# source**.
@@ -12,7 +12,7 @@ compatible `[Plugin]`, `[Step]` and `[Image]` attributes.
 Your registration stops living only in an environment you have to go look at, and starts
 living in the code review, the diff and the git history.
 
-![Plugin Documenter: assemblies and classes on the left, the attributes it would write on the right](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-attributes.png)
+![Plugin Step Codegen: assemblies and classes on the left, the attributes it would write on the right](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-attributes.png)
 
 ## Why
 
@@ -23,11 +23,11 @@ against the modern attribute model.
 
 ## Install
 
-**Tool Library** in XrmToolBox → search for **Plugin Documenter** → **Install**. Nothing
+**Tool Library** in XrmToolBox → search for **Plugin Step Codegen** → **Install**. Nothing
 else to set up, and nothing to configure.
 
 The Tool Library installs it from nuget, where it lives as
-[`Comentality.PluginDocumenter`](https://www.nuget.org/packages/Comentality.PluginDocumenter).
+[`Comentality.PluginStepCodegen`](https://www.nuget.org/packages/Comentality.PluginStepCodegen).
 
 ## What it does
 

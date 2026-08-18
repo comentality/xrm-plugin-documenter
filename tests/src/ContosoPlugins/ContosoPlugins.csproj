@@ -3,7 +3,7 @@
   <!--
     The second vendor in the fixture: a different publisher, a different solution and a
     different strong name key from TestPlugins, so the two are only ever told apart by
-    things the documenter can actually see.
+    things the tool can actually see.
   -->
   <PropertyGroup>
     <TargetFramework>net462</TargetFramework>

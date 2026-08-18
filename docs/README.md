@@ -1,4 +1,4 @@
-# Plugin Documenter documentation
+# Plugin Step Codegen documentation
 
 The tool reads the plugin steps and images registered in a Dataverse environment and
 writes them into your C# source, either as [Xrm Tools](https://github.com/rezanid/xrmtools)

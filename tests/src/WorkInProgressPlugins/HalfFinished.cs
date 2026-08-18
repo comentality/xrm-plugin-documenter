@@ -11,7 +11,7 @@ namespace WorkInProgress
     ///
     /// The managed fixture can only reach a disabled step through a whole companion
     /// solution imported without --activate-plugins. Here it is one field on one record,
-    /// which is the other half of the same check: the documenter has to say "disabled"
+    /// which is the other half of the same check: the tool has to say "disabled"
     /// whichever way the step got that way.
     /// </summary>
     public class HalfFinished : IPlugin

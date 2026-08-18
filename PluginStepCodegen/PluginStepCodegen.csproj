@@ -2,15 +2,15 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <OutputType>Library</OutputType>
-    <AssemblyName>PluginDocumenter</AssemblyName>
-    <RootNamespace>PluginDocumenter</RootNamespace>
+    <AssemblyName>PluginStepCodegen</AssemblyName>
+    <RootNamespace>PluginStepCodegen</RootNamespace>
     <Version>1.0.0</Version>
     <UseWindowsForms>true</UseWindowsForms>
     <Company>Comentality</Company>
     <Authors>Comentality</Authors>
     <Description>Document Dataverse plugin step registrations directly in your C# source, as Xrm Tools compatible [Plugin], [Step] and [Image] attributes.</Description>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-    <NuspecFile>PluginDocumenter.nuspec</NuspecFile>
+    <NuspecFile>PluginStepCodegen.nuspec</NuspecFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,7 +22,7 @@
   <ItemGroup>
     <!-- Single source of truth: the same file the tool writes into user projects. -->
     <EmbeddedResource Include="..\assets\XrmToolsMetaAttributes.cs">
-      <LogicalName>PluginDocumenter.XrmToolsMetaAttributes.cs</LogicalName>
+      <LogicalName>PluginStepCodegen.XrmToolsMetaAttributes.cs</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 </Project>

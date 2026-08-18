@@ -3,7 +3,7 @@
   <!--
     The assembly nobody packed into anything: registered record by record against a
     development environment, the way the plugin registration tool does it, which is where
-    the documenter is actually used. It shares TestPlugins' key because it is the same
+    the tool is actually used. It shares TestPlugins' key because it is the same
     developer's second project, not a second vendor.
   -->
   <PropertyGroup>

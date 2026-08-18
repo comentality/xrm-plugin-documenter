@@ -5,7 +5,7 @@ using XrmTools.Meta.Attributes;
 namespace Contoso.Crm
 {
     /// <summary>
-    /// In the codebase, carrying the documenter's own output, and not registered anywhere.
+    /// In the codebase, carrying the tool's own output, and not registered anywhere.
     ///
     /// The attributes and the "Register:" block below are the tool's, written when this
     /// class still had steps; the registration has since been deleted. The tool lists

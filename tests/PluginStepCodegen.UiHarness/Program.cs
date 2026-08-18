@@ -6,9 +6,9 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using PluginDocumenter.Logic;
+using PluginStepCodegen.Logic;
 
-namespace PluginDocumenter.UiHarness
+namespace PluginStepCodegen.UiHarness
 {
     /// <summary>
     /// Hosts the tool's control in a bare form, fills it with sample rows and screenshots it, so
@@ -46,7 +46,7 @@ namespace PluginDocumenter.UiHarness
             var outPath = args[2];
             var comment = args.Length > 3 && args[3].Equals("comment", StringComparison.OrdinalIgnoreCase);
             var folder = args.Length > 4 ? args[4] : null;
-            var title = args.Length > 5 ? args[5] : "Plugin Documenter UI harness";
+            var title = args.Length > 5 ? args[5] : "Plugin Step Codegen UI harness";
 
             // Without this a layout mistake surfaces as a modal error dialog on a machine nobody
             // is looking at, and the run just hangs until it is killed.
@@ -57,7 +57,7 @@ namespace PluginDocumenter.UiHarness
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            var control = new PluginDocumenterControl { Dock = DockStyle.Fill };
+            var control = new PluginStepCodegenControl { Dock = DockStyle.Fill };
             var form = new Form
             {
                 Text = title,
@@ -148,7 +148,7 @@ namespace PluginDocumenter.UiHarness
         /// the screenshot is meant to show - the Microsoft count on the switch, the status line,
         /// the grouping, the preview - is computed on the way from one to the other.
         /// </summary>
-        private static void Populate(PluginDocumenterControl control, bool comment, string folder)
+        private static void Populate(PluginStepCodegenControl control, bool comment, string folder)
         {
             var assemblies = SampleAssemblies();
             control.GetType().GetField("_assemblies", Priv).SetValue(control, assemblies);

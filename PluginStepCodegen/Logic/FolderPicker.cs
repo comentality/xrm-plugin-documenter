@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace PluginDocumenter.Logic
+namespace PluginStepCodegen.Logic
 {
     /// <summary>
     /// Folder picker built on the Vista-era IFileOpenDialog, i.e. the same Explorer window

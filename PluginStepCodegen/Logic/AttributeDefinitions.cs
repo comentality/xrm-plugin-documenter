@@ -1,7 +1,7 @@
 using System.IO;
 using System.Reflection;
 
-namespace PluginDocumenter.Logic
+namespace PluginStepCodegen.Logic
 {
     /// <summary>
     /// The dependency-free subset of XrmTools.Meta.Attributes that this tool can drop
@@ -12,7 +12,7 @@ namespace PluginDocumenter.Logic
     {
         public const string FileName = "XrmToolsMetaAttributes.cs";
 
-        private const string ResourceName = "PluginDocumenter.XrmToolsMetaAttributes.cs";
+        private const string ResourceName = "PluginStepCodegen.XrmToolsMetaAttributes.cs";
 
         public static string Source
         {

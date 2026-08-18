@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 
-namespace PluginDocumenter.Logic
+namespace PluginStepCodegen.Logic
 {
     /// <summary>
     /// Renders a plugin type's registration as an XML doc comment meant to be read,

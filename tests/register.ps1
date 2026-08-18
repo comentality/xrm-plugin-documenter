@@ -5,12 +5,12 @@
 .DESCRIPTION
     Builds the fixture solutions and imports them:
 
-      PluginDocumenterE2E          publisher Comentality: Microsoft.Contoso.Extensions,
+      PluginStepCodegenE2E          publisher Comentality: Microsoft.Contoso.Extensions,
                                    its plugin type and its step, imported with
                                    --activate-plugins
-      PluginDocumenterE2EContoso   publisher Contoso: the three Contoso assemblies and
+      PluginStepCodegenE2EContoso   publisher Contoso: the three Contoso assemblies and
                                    their enabled steps, also with --activate-plugins
-      PluginDocumenterE2EDisabled  the steps that are meant to stay switched off,
+      PluginStepCodegenE2EDisabled  the steps that are meant to stay switched off,
                                    imported without it
 
     All three are managed, so unregister.ps1 can take them away again completely. The
@@ -18,7 +18,7 @@
 
     Then the two assemblies that are in no solution at all, written record by record over
     the Web API the way the plugin registration tool writes one into a development
-    environment. That is the shape the documenter is really used against - it is what the
+    environment. That is the shape the tool is really used against - it is what the
     assembly list shows before any switch is touched - and the only one the solution route
     cannot produce; see unmanaged.ps1.
 
@@ -73,6 +73,6 @@ if ($zips.Companion) {
 Register-Unmanaged -Manifest $manifest -Built $zips.Built -Environment $Environment
 
 Write-Host ''
-Write-Host 'Registered. Point the Plugin Documenter at the source folder:'
+Write-Host 'Registered. Point the Plugin Step Codegen at the source folder:'
 Write-Host "  $(Join-Path $root 'src')"
 Write-Host 'Run verify.ps1 to confirm the environment matches registrations.psd1.'

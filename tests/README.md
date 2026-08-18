@@ -4,7 +4,7 @@ Six plugin assemblies, two publishers, three solutions of empty plugins and two 
 registered by hand into none of them, so a run can be judged against something other than
 "looks about right".
 
-The split is not arbitrary. The documenter shows **unmanaged** assemblies by default -
+The split is not arbitrary. Plugin Step Codegen shows **unmanaged** assemblies by default -
 the plugin somebody is in the middle of writing - so the two registered by hand are what
 the tool opens on, and they carry every shape of step, image and free text the emitters
 have to describe. The four that arrived in managed solutions are what somebody shipped;
@@ -35,7 +35,7 @@ compile break the build.
 
 ## The source folder
 
-The folder the documenter is pointed at is `tests\src`, and it holds the source of
+The folder the tool is pointed at is `tests\src`, and it holds the source of
 **several** assemblies at once - which is the normal shape of a plugin repository and the
 only way to reach the things that can only go wrong when a class name is not unique across
 one:
@@ -72,8 +72,8 @@ The connection is an ordinary OAuth connection against the client id XrmToolBox 
 uses, so it signs you in interactively once and reads the cached token after that. The only
 thing left to type is the source folder, which the script puts on the clipboard.
 
-`xtb.ps1` itself is fifteen lines. Everything in it that is XrmToolBox rather than Plugin
-Documenter lives in the [XtbSandbox](https://github.com/comentality/xrmtoolbox-sandbox)
+`xtb.ps1` itself is fifteen lines. Everything in it that is XrmToolBox rather than Plugin Step
+Codegen lives in the [XtbSandbox](https://github.com/comentality/xrmtoolbox-sandbox)
 module, shared with the other XrmToolBox tools here, so install it once:
 
 ```powershell
@@ -100,7 +100,7 @@ copy of them to be wrong.
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
-is exactly what the documenter uses a token for, so the keys have to be the same
+is exactly what the tool uses a token for, so the keys have to be the same
 everywhere. They sign nothing anyone should trust.
 
 ## The assemblies
@@ -117,7 +117,7 @@ everywhere. They sign nothing anyone should trust.
 Two publishers and two keys, and nothing lines up:
 `Microsoft.Contoso.Extensions` is called Microsoft, carries the same signature as its
 plainly-not-Microsoft neighbours, and was shipped by a publisher of neither name. The
-documenter reads the name and the signature and cannot see the publisher at all, which is
+tool reads the name and the signature and cannot see the publisher at all, which is
 the point of there being one to ignore.
 
 Neither assembly registered by hand has a publisher, because nothing published them. They
@@ -140,9 +140,9 @@ one field on the record.
 
 | Solution | Publisher | Contents | Imported |
 |---|---|---|---|
-| `PluginDocumenterE2E` | Comentality | `Microsoft.Contoso.Extensions`, 1 plugin type, 1 step | `--activate-plugins` |
-| `PluginDocumenterE2EContoso` | Contoso | the three Contoso assemblies, 8 plugin types, 5 steps | `--activate-plugins` |
-| `PluginDocumenterE2EDisabled` | Contoso | 1 step | plain, so it stays off |
+| `PluginStepCodegenE2E` | Comentality | `Microsoft.Contoso.Extensions`, 1 plugin type, 1 step | `--activate-plugins` |
+| `PluginStepCodegenE2EContoso` | Contoso | the three Contoso assemblies, 8 plugin types, 5 steps | `--activate-plugins` |
+| `PluginStepCodegenE2EDisabled` | Contoso | 1 step | plain, so it stays off |
 
 The companion goes last, because its step runs against a plugin type another solution
 installs. `unregister.ps1` deletes it first for the same reason.
@@ -154,7 +154,7 @@ than packing a solution with nothing in it.
 ## Why two assemblies are in none of them
 
 Everything in a solution describes a plugin that has been *shipped*. That is not where the
-documenter is used. It is used on a plugin somebody is in the middle of writing: built,
+tool is used. It is used on a plugin somebody is in the middle of writing: built,
 registered straight into a development environment, and pointed at to get the comments
 out. Nothing about that involves a solution, and it is what the assembly list shows before
 any switch is touched — so it is where the assembly with every interesting case lives.
@@ -165,23 +165,23 @@ records belonging to no solution but the Default one. What that reaches and the 
 do not:
 
 - **`ismanaged` is false** on every record, along with the whole unmanaged customization
-  layer. The documenter does not read any of it and is not meant to start; `verify.ps1`
+  layer. The tool does not read any of it and is not meant to start; `verify.ps1`
   asserts it so the two routes are known to produce two genuinely different kinds of row.
 - **`PluginTypeId` is derived, not written.** A step is created with its plugin type on
   `EventHandler`, which is polymorphic — a step can run a service endpoint instead — and
-  the platform fills in `PluginTypeId` from it. `PluginTypeId` is what the documenter's
+  the platform fills in `PluginTypeId` from it. `PluginTypeId` is what the tool's
   step query joins on. Were that ever to stop happening, the tool would find no steps at
   all in the one environment shape that matters most, and only this fixture would say so.
 - **A disabled step, disabled on the step.** The managed route can only reach one through
   a whole companion solution imported without `--activate-plugins`. Here it is one field
   on one record, which is how a developer actually switches a step off.
-- **The generated step name is the registration tool's.** The documenter suppresses a step
+- **The generated step name is the registration tool's.** The tool suppresses a step
   name it recognises as the default one, and the string it compares against here was
   produced the same way a user's is.
 - **Impersonation is written as an id.** A solution carries `ImpersonatingUserIdName` and
   lets the importer resolve the name; a record written by hand binds
   `impersonatinguserid` to a `systemuser`, which `unmanaged.ps1` asks `WhoAmI` for. Both
-  reach the same column and the documenter cannot tell which route wrote it — which is
+  reach the same column and the tool cannot tell which route wrote it — which is
   worth having pinned, because those are two quite different pieces of plumbing.
 - **Free text arrives exactly as it was sent.** The Web API keeps CRLF; the solution
   importer does not, because XML normalises line endings inside an element. Same text, two
@@ -289,7 +289,7 @@ under the TestPlugins heading and the last under Contoso's.
 ## TestPlugins
 
 Everything below is registered by hand, in no solution, and none of it reads any
-differently for that — which is the claim worth making, because the documenter is not
+differently for that — which is the claim worth making, because the tool is not
 supposed to be able to tell. The one place the route shows through is `EscapedText`, and
 it shows through in a line ending.
 
@@ -471,7 +471,7 @@ exists. Afterwards:
 
 Registered, and reported as **ambiguous**: `Duplicate` is declared by both
 `TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs` and `BetaDuplicate.cs`, and the
-documenter matches files by short name. Neither file may be modified.
+tool matches files by short name. Neither file may be modified.
 
 ### NeverRegistered and Beta.Duplicate
 
@@ -527,7 +527,7 @@ each is in the default list and the other half arrived in a solution.
 
 `src\Shared\Twin.cs` is linked into both `TestPlugins` and `Contoso.Crm.Plugins`, so
 `Shared.Twin` is a type in both, and both register it with steps of their own. This is
-what a shared base library looks like once it has been deployed twice, and the documenter
+what a shared base library looks like once it has been deployed twice, and the tool
 knows nothing about assemblies when it goes looking for a file: both registrations resolve
 to this one `.cs`.
 
@@ -560,7 +560,7 @@ acceptable is a decision; that it happens is pinned here.
 
 `TestPlugins.Rival` and `Contoso.Crm.Rival` are different classes, in different
 namespaces, in different assemblies, in a file each. The namespaces would settle it in a
-moment, but the documenter matches on the short name alone, so both are reported as
+moment, but the tool matches on the short name alone, so both are reported as
 ambiguous and **neither file may be modified**:
 
 ```
@@ -759,7 +759,7 @@ Worth knowing what the suite does *not* pin, so a gap is not mistaken for a pass
   environment's own first party assemblies.
 - **`isolationmode` "None".** Online forces sandbox for everything that is not Microsoft's,
   so the other value in the Isolation column is not reachable in a Developer environment.
-- **`ishidden` assemblies.** The documenter filters them out and the fixture cannot make
+- **`ishidden` assemblies.** The tool filters them out and the fixture cannot make
   one: `IsHidden` is not in the solution schema for a plugin assembly.
 - **Custom API handlers and workflow activities.** Both are plugin types with no
   `sdkmessageprocessingstep`, so the tool drops them and is silently blind to them. That is
@@ -813,7 +813,7 @@ Things that cost time, in case they cost it again:
   is visible in the emitted attribute rather than only in the environment.
 - A step in a solution can run against a plugin type a *different* solution installed: the
   companion is packed with no assemblies at all, only root components of type 92, and the
-  type its step names arrives with `PluginDocumenterE2EContoso`. It shares that solution's
+  type its step names arrives with `PluginStepCodegenE2EContoso`. It shares that solution's
   publisher, which is not known to be required and was not worth finding out.
 
 And, from registering assemblies without a solution:
@@ -829,7 +829,7 @@ And, from registering assemblies without a solution:
 - `sdkmessageprocessingstep` has no `plugintypeid` column in the Web API at all - the
   writable one is `eventhandler`, bound as `eventhandler_plugintype@odata.bind`, and
   `PluginTypeId` is derived from it. FetchXML and the SDK both still see `plugintypeid`,
-  which is why `verify.ps1` and the documenter can join on something the create call
+  which is why `verify.ps1` and the tool can join on something the create call
   cannot set.
 - The API validates the image against the message, which is worth knowing before writing
   a fixture that reads sensibly and then will not register: a pre image on `Create` is

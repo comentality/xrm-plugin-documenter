@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 
-namespace PluginDocumenter.Logic
+namespace PluginStepCodegen.Logic
 {
     /// <summary>
     /// Renders a plugin type's registration as Xrm Tools compatible attributes.

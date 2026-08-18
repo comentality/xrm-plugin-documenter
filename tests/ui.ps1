@@ -1,7 +1,7 @@
 # Screenshots the tool's UI at a few window sizes, without XrmToolBox and without a connection.
 #
 # The layout is built in code and most of it only misbehaves at a size you did not try, so this
-# hosts PluginDocumenterControl in a bare form, fills it with sample rows and grabs a PNG per size.
+# hosts PluginStepCodegenControl in a bare form, fills it with sample rows and grabs a PNG per size.
 # Shots land in tests\.ui and are overwritten each run.
 #
 #   .\ui.ps1                          # default sizes
@@ -27,8 +27,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$project = Join-Path $PSScriptRoot "PluginDocumenter.UiHarness\PluginDocumenter.UiHarness.csproj"
-$exe     = Join-Path $PSScriptRoot "PluginDocumenter.UiHarness\bin\Debug\net48\PluginDocumenter.UiHarness.exe"
+$project = Join-Path $PSScriptRoot "PluginStepCodegen.UiHarness\PluginStepCodegen.UiHarness.csproj"
+$exe     = Join-Path $PSScriptRoot "PluginStepCodegen.UiHarness\bin\Debug\net48\PluginStepCodegen.UiHarness.exe"
 if (-not $OutputDir) {
     $OutputDir = if ($Docs) { Join-Path (Split-Path $PSScriptRoot -Parent) "assets" } else { Join-Path $PSScriptRoot ".ui" }
 }
@@ -48,8 +48,8 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 # Each shot is width, height, output path, and then what makes it different from the last one.
 $shots = if ($Docs) {
     @(
-        @{ Size = "1280x860"; Name = "ui-attributes.png"; Mode = "attributes"; Folder = $docsFolder; Title = "Plugin Documenter" }
-        @{ Size = "1280x860"; Name = "ui-comment.png";    Mode = "comment";    Folder = $docsFolder; Title = "Plugin Documenter" }
+        @{ Size = "1280x860"; Name = "ui-attributes.png"; Mode = "attributes"; Folder = $docsFolder; Title = "Plugin Step Codegen" }
+        @{ Size = "1280x860"; Name = "ui-comment.png";    Mode = "comment";    Folder = $docsFolder; Title = "Plugin Step Codegen" }
     )
 } else {
     @($Size | ForEach-Object { @{ Size = $_; Name = $null; Mode = "attributes"; Folder = $null; Title = $null } })

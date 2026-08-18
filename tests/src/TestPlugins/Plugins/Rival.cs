@@ -7,7 +7,7 @@ namespace TestPlugins
     /// <summary>
     /// Half of the cross assembly ambiguity fixture, the other half being
     /// Contoso.Crm.Rival in ContosoPlugins\Rival.cs. Two assemblies, two files, two
-    /// registrations, and namespaces that would settle it in a moment - but the documenter
+    /// registrations, and namespaces that would settle it in a moment - but the tool
     /// matches on the short name alone, so it has to report both as ambiguous and modify
     /// neither file.
     /// </summary>

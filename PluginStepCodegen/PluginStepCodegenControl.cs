@@ -6,13 +6,13 @@ using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 using Microsoft.Xrm.Sdk;
-using PluginDocumenter.Logic;
+using PluginStepCodegen.Logic;
 using XrmToolBox.Extensibility;
 using Label = System.Windows.Forms.Label;
 
-namespace PluginDocumenter
+namespace PluginStepCodegen
 {
-    public partial class PluginDocumenterControl : PluginControlBase
+    public partial class PluginStepCodegenControl : PluginControlBase
     {
         private List<AssemblyInfo> _assemblies = new List<AssemblyInfo>();
 
@@ -73,7 +73,7 @@ namespace PluginDocumenter
         private Label _lblWriteHint;
         private RichTextBox _txtPreview;
 
-        public PluginDocumenterControl()
+        public PluginStepCodegenControl()
         {
             InitializeComponent();
         }

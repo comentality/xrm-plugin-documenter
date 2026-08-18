@@ -5,7 +5,7 @@ using XrmTools.Meta.Attributes;
 namespace TestPlugins
 {
     /// <summary>
-    /// What the documenter must not touch, sitting next to what it must overwrite.
+    /// What the tool must not touch, sitting next to what it must overwrite.
     ///
     /// This summary, the remarks block below it and the [Obsolete] have to survive a run
     /// untouched. The [Step] and the "Register:" remarks are stale output from an earlier

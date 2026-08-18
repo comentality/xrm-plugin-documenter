@@ -16,7 +16,7 @@
       <LocalizedName description="{{SolutionTitle}}" languagecode="1033" />
     </LocalizedNames>
     <Descriptions>
-      <Description description="Empty plugins registered every way the Plugin Documenter has to describe. Safe to delete." languagecode="1033" />
+      <Description description="Empty plugins registered every way the Plugin Step Codegen has to describe. Safe to delete." languagecode="1033" />
     </Descriptions>
     <Version>1.0</Version>
     <Managed>1</Managed>

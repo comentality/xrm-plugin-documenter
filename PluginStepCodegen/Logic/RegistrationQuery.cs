@@ -4,7 +4,7 @@ using System.Linq;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
-namespace PluginDocumenter.Logic
+namespace PluginStepCodegen.Logic
 {
     /// <summary>
     /// Reads plugin assemblies, types, steps and images from the connected environment.

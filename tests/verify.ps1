@@ -3,8 +3,8 @@
     Checks that the environment actually matches registrations.psd1.
 
 .DESCRIPTION
-    Run after register.ps1, before pointing the documenter at the environment: if this
-    fails, anything the documenter writes is being judged against the wrong registration.
+    Run after register.ps1, before pointing the tool at the environment: if this
+    fails, anything the tool writes is being judged against the wrong registration.
 
     Every check is a FetchXML query whose filter spells out what the assembly, step or
     image is supposed to be, asking the server to agree rather than parsing values back
@@ -159,12 +159,12 @@ foreach ($assembly in $manifest.Assemblies) {
     # ------------------------------------------------------------ the assembly itself
 
     # Managed or not is the one thing that separates the assembly somebody registered by
-    # hand from the four that arrived in solutions. The documenter does not read it and is
+    # hand from the four that arrived in solutions. The tool does not read it and is
     # not supposed to start; checking it here is what says the two routes really did
     # produce two different kinds of record.
     $managed = if ($assembly.Solution) { 'true' } else { 'false' }
 
-    Test-Fetch -Description "assembly $($assembly.Name) is visible to the documenter and ismanaged $managed" `
+    Test-Fetch -Description "assembly $($assembly.Name) is visible to the tool and ismanaged $managed" `
         -Expect (Get-AssemblyId $assembly) -Xml @"
 <fetch>
   <entity name="pluginassembly">
@@ -174,7 +174,7 @@ foreach ($assembly in $manifest.Assemblies) {
       <condition attribute="pluginassemblyid" operator="eq" value="$(Get-AssemblyId $assembly)" />
       <condition attribute="isolationmode" operator="eq" value="2" />
       <condition attribute="ismanaged" operator="eq" value="$managed" />
-      <!-- The condition the documenter's own assembly query uses. -->
+      <!-- The condition the tool's own assembly query uses. -->
       <condition attribute="ishidden" operator="eq" value="false" />
     </filter>
   </entity>
@@ -224,7 +224,7 @@ foreach ($assembly in $manifest.Assemblies) {
         # not unique across the fixture. The link is on PluginTypeId and is inner, which is
         # the check that matters most for a step registered by hand: it is written with the
         # plugin type on EventHandler, and if the platform ever stopped deriving
-        # PluginTypeId from that, the documenter would find no steps and this would say so.
+        # PluginTypeId from that, the tool would find no steps and this would say so.
         $links = @"
     <link-entity name="sdkmessage" from="sdkmessageid" to="sdkmessageid" alias="m">
       <filter>
@@ -335,7 +335,7 @@ $($imageConditions -join "`r`n")
 
     # ------------------------------------------------------------ the stepless types
 
-    # Types with no steps are what the documenter is required to leave out of its list, so
+    # Types with no steps are what the tool is required to leave out of its list, so
     # each one has to still be there and still have nothing against it.
     $registered = @($assembly.Steps | ForEach-Object { $_.Type } | Sort-Object -Unique)
     foreach ($type in $assembly.Types) {

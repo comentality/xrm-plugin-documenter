@@ -6,7 +6,7 @@ obj/
 .claude/
 .nuget-apikey
 artifacts/
-# The documenter leaves one of these beside every file it rewrites, including the fixtures.
+# The tool leaves one of these beside every file it rewrites, including the fixtures.
 *.bak
 # The private XrmToolBox instance xtb.ps1 builds, including its connection and its token cache.
 tests/.xtb/

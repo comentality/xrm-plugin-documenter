@@ -161,7 +161,7 @@ $rows = Invoke-Pac (@('env', 'fetch') + $envArgs + @('--xmlFile', $fetchFile))
 foreach ($name in $wanted) { $messageIds[$name] = Get-IdByName -Output $rows -Name $name }
 
 # The schema carries impersonation as ImpersonatingUserIdName, so what is needed is the
-# user's full name - which is also exactly what the documenter reads back and prints. Only
+# user's full name - which is also exactly what the tool reads back and prints. Only
 # the steps that go into a solution need it; an unmanaged one is written with the id
 # instead, which unmanaged.ps1 asks WhoAmI for.
 $impersonatedUserName = $null
@@ -205,7 +205,7 @@ function New-AssemblyDataXml {
     $xml = New-Object System.Text.StringBuilder
     [void]$xml.AppendLine('<?xml version="1.0" encoding="utf-8"?>')
     [void]$xml.AppendLine("<PluginAssembly FullName=`"$(ConvertTo-XmlText $info.FullName)`" PluginAssemblyId=`"{$(Get-AssemblyId $Assembly)}`" CustomizationLevel=`"1`">")
-    [void]$xml.AppendLine('  <Description>Empty plugins used by the Plugin Documenter end to end suite.</Description>')
+    [void]$xml.AppendLine('  <Description>Empty plugins used by the Plugin Step Codegen end to end suite.</Description>')
     [void]$xml.AppendLine('  <IsolationMode>2</IsolationMode>')
     [void]$xml.AppendLine('  <SourceType>0</SourceType>')
     [void]$xml.AppendLine('  <IntroducedVersion>1.0</IntroducedVersion>')

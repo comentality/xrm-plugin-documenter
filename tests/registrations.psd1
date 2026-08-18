@@ -2,11 +2,11 @@
     The test matrix.
 
     Six plugin assemblies, three solutions, two publishers and two strong name keys, so
-    that the things the documenter has to get right about *several* assemblies - which
+    that the things the tool has to get right about *several* assemblies - which
     ones it hides, which ones it groups a class under, which class a file belongs to when
     two assemblies claim the same name - are pinned by something other than opinion.
 
-    Two of the six are in no solution at all, because that is what the documenter is
+    Two of the six are in no solution at all, because that is what the tool is
     pointed at: an assembly somebody is in the middle of writing, built and registered
     straight into a development environment. Those are the rows the tool shows by default.
     The other four arrived in managed solutions - shipped by somebody, source elsewhere -
@@ -19,7 +19,7 @@
 
     Publishers
       Keyed by name and referenced from a solution. A publisher is not something the
-      documenter reads - that is the point of there being two of them.
+      tool reads - that is the point of there being two of them.
 
     Solutions
       One per publisher, plus the companion that exists only to leave its steps disabled.
@@ -35,7 +35,7 @@
                   tool does in a development environment. Those records are unmanaged and
                   belong to no solution, so register.ps1 writes them over the Web API and
                   unregister.ps1 deletes them one at a time.
-      Source      where the documenter would find the source, or $null when it must not
+      Source      where the tool would find the source, or $null when it must not
                   find any. Documentation only; what decides it is whether the project
                   lives under tests\src or tests\nosource.
       Types       every plugin type in the assembly, steps or no steps. Id is two hex
@@ -53,7 +53,7 @@
       Mode          0 synchronous, 1 asynchronous.
       Rank          execution order.
       Name          step name. Omit to get the name Dataverse generates, which the
-                    documenter is supposed to recognise as a default and not emit.
+                    tool is supposed to recognise as a default and not emit.
       Impersonate   run in the context of the user register.ps1 is signed in as.
       Disabled      leave the step registered but switched off. In a solution these go
                     into a separate one, because the format has no element for a step's
@@ -71,10 +71,10 @@
             Prefix            = 'cmtl'
             OptionValuePrefix = '34429'
         }
-        # A second vendor, so that "whose assembly is this" has an answer the documenter
+        # A second vendor, so that "whose assembly is this" has an answer the tool
         # cannot reach: publisher is not on the pluginassembly record.
         Contoso = @{
-            UniqueName        = 'PluginDocumenterContoso'
+            UniqueName        = 'PluginStepCodegenContoso'
             Name              = 'Contoso Ltd'
             Prefix            = 'dpcon'
             OptionValuePrefix = '34431'
@@ -83,13 +83,13 @@
 
     Solutions = @(
         @{
-            Name      = 'PluginDocumenterE2E'
-            Title     = 'Plugin Documenter E2E Fixtures'
+            Name      = 'PluginStepCodegenE2E'
+            Title     = 'Plugin Step Codegen E2E Fixtures'
             Publisher = 'Comentality'
         }
         @{
-            Name      = 'PluginDocumenterE2EContoso'
-            Title     = 'Plugin Documenter E2E Fixtures (Contoso)'
+            Name      = 'PluginStepCodegenE2EContoso'
+            Title     = 'Plugin Step Codegen E2E Fixtures (Contoso)'
             Publisher = 'Contoso'
         }
     )
@@ -99,8 +99,8 @@
     # Contoso's because the one step it carries runs against a Contoso plugin type, and a
     # solution that installs nothing has no reason to belong to a second publisher.
     DisabledSolution = @{
-        Name      = 'PluginDocumenterE2EDisabled'
-        Title     = 'Plugin Documenter E2E Fixtures (steps left disabled)'
+        Name      = 'PluginStepCodegenE2EDisabled'
+        Title     = 'Plugin Step Codegen E2E Fixtures (steps left disabled)'
         Publisher = 'Contoso'
     }
 
@@ -112,7 +112,7 @@
         # from the Contoso assemblies as far as anything visible is concerned.
         #
         # In no solution, and deliberately so: this is the assembly with everything the
-        # emitters have to describe, and the documenter's own default view is the unmanaged
+        # emitters have to describe, and the tool's own default view is the unmanaged
         # one. Registering it any other way would have put every interesting case behind a
         # switch nobody turns on to do their actual work.
         @{
@@ -228,7 +228,7 @@
                     Configuration = 'C:\path\to "somewhere" & back'
                 }
 
-                # --- Ordering. Registered scrambled; the documenter has to sort them. ---
+                # --- Ordering. Registered scrambled; the tool has to sort them. ---
                 @{
                     Id = '0b'; Type = 'TestPlugins.WideRegistration'
                     Message = 'Update'; Entity = 'account'; Stage = 10; Mode = 0; Rank = 3
@@ -290,13 +290,13 @@
 
         # ========================================================= Contoso.Crm.Plugins
         # The second vendor's assembly: its own publisher, its own key, and source sitting
-        # in the same folder the documenter searches for TestPlugins.
+        # in the same folder the tool searches for TestPlugins.
         @{
             Name      = 'Contoso.Crm.Plugins'
             Block     = '2'
             Namespace = 'Contoso.Crm'
             Project   = 'src\ContosoPlugins\ContosoPlugins.csproj'
-            Solution  = 'PluginDocumenterE2EContoso'
+            Solution  = 'PluginStepCodegenE2EContoso'
             Source    = 'src\ContosoPlugins'
 
             Types = @(
@@ -318,7 +318,7 @@
                 # companion without --activate-plugins - the one thing the third solution
                 # exists to prove. And its description arrives carrying CRLF, which the
                 # solution route does not keep: XML normalises line endings inside an
-                # element, so the documenter emits \n here and \r\n for the same text
+                # element, so the tool emits \n here and \r\n for the same text
                 # written over the Web API into TestPlugins.EscapedText.
                 @{
                     Id = '02'; Type = 'Contoso.Crm.Charlie'
@@ -348,7 +348,7 @@
             Block     = '3'
             Namespace = 'Contoso.Crm'
             Project   = 'nosource\OrphanPlugins\OrphanPlugins.csproj'
-            Solution  = 'PluginDocumenterE2EContoso'
+            Solution  = 'PluginStepCodegenE2EContoso'
             Source    = $null
 
             Types = @(
@@ -381,7 +381,7 @@
             Block     = '4'
             Namespace = 'Contoso.Crm.Empty'
             Project   = 'nosource\EmptyPlugins\EmptyPlugins.csproj'
-            Solution  = 'PluginDocumenterE2EContoso'
+            Solution  = 'PluginStepCodegenE2EContoso'
             Source    = $null
 
             Types = @(
@@ -399,7 +399,7 @@
         # it is.
         #
         # Shipped by Comentality, which makes all three disagree - the name says Microsoft,
-        # the signature says Contoso, the publisher says Comentality - and the documenter
+        # the signature says Contoso, the publisher says Comentality - and the tool
         # reads only the first two. It is also the only assembly this solution owns, so
         # the two publishers survive TestPlugins leaving the solution route.
         #
@@ -412,7 +412,7 @@
             Block     = '5'
             Namespace = 'Microsoft.Contoso'
             Project   = 'src\MsContosoExtensions\MsContosoExtensions.csproj'
-            Solution  = 'PluginDocumenterE2E'
+            Solution  = 'PluginStepCodegenE2E'
             Source    = 'src\MsContosoExtensions'
 
             Types = @(

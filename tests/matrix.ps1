@@ -65,7 +65,7 @@ function Get-AssemblyFullName {
 }
 
 # What the plugin registration tool would show in its tree: the type name with the
-# assembly's own namespace taken off the front. Cosmetic, and nothing the documenter reads.
+# assembly's own namespace taken off the front. Cosmetic, and nothing the tool reads.
 function Get-FriendlyName {
     param([hashtable] $Assembly, [string] $TypeName)
 
@@ -86,7 +86,7 @@ function Get-StepName {
         return $Step.Name
     }
 
-    # The name Dataverse generates when nobody supplies one. The documenter is supposed to
+    # The name Dataverse generates when nobody supplies one. The tool is supposed to
     # recognise it as a default and leave it out of the emitted attribute, which is the
     # whole reason most fixtures do not set Name.
     $entity = Get-StepEntity $Step

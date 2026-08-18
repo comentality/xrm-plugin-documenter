@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Registered in the environment, absent from the folder the documenter is pointed at.
+    Registered in the environment, absent from the folder the tool is pointed at.
 
     An assembly has to be a real signed DLL before Dataverse will take it, so the source
     exists - it just lives under tests\nosource instead of tests\src, which is the folder

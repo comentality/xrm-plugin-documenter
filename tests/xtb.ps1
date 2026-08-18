@@ -13,7 +13,7 @@
 # is the same environment register.ps1 and verify.ps1 talk to. Pass -Environment <url> to
 # aim somewhere else.
 #
-# Everything that is XrmToolBox rather than Plugin Documenter now lives in the XtbSandbox
+# Everything that is XrmToolBox rather than Plugin Step Codegen now lives in the XtbSandbox
 # module (github.com/comentality/xrmtoolbox-sandbox), shared with the other tools.
 
 param(
@@ -33,7 +33,7 @@ Import-Module XtbSandbox
 
 Start-XtbSandbox @PSBoundParameters `
     -InstanceRoot   (Join-Path $PSScriptRoot ".xtb") `
-    -ProjectPath    (Join-Path $PSScriptRoot "..\PluginDocumenter\PluginDocumenter.csproj") `
-    -ToolName       "Plugin Documenter" `
-    -ConnectionName "PluginDocumenter E2E" `
+    -ProjectPath    (Join-Path $PSScriptRoot "..\PluginStepCodegen\PluginStepCodegen.csproj") `
+    -ToolName       "Plugin Step Codegen" `
+    -ConnectionName "PluginStepCodegen E2E" `
     -Clipboard      (Join-Path $PSScriptRoot "src")

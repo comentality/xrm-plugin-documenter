@@ -12,7 +12,7 @@ if (-not $ApiKey) {
     }
 }
 
-$project = Join-Path $PSScriptRoot "PluginDocumenter\PluginDocumenter.csproj"
+$project = Join-Path $PSScriptRoot "PluginStepCodegen\PluginStepCodegen.csproj"
 
 dotnet build $project -c Release
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -20,7 +20,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dotnet pack $project -c Release --no-build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$nupkg = Get-ChildItem (Join-Path $PSScriptRoot "PluginDocumenter\bin\Release\*.nupkg") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$nupkg = Get-ChildItem (Join-Path $PSScriptRoot "PluginStepCodegen\bin\Release\*.nupkg") | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
 Write-Host "Publishing $($nupkg.Name)..."
 dotnet nuget push $nupkg.FullName --api-key $ApiKey --source https://api.nuget.org/v3/index.json

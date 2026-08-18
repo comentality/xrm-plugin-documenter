@@ -4,7 +4,7 @@
     An assembly whose matrix entry has no Solution is registered the way somebody working
     in a development environment registers one: the assembly, its plugin types, its steps
     and their images written straight into the organization as unmanaged records that
-    belong to no solution but the Default one. That is where the documenter is actually
+    belong to no solution but the Default one. That is where the tool is actually
     pointed - at a plugin being written, not at a solution being shipped - and nothing
     else in this suite reaches it.
 
@@ -113,7 +113,7 @@ function Register-Unmanaged {
             sourcetype     = 0
             isolationmode  = 2
             content        = [Convert]::ToBase64String([IO.File]::ReadAllBytes($info.Dll))
-            description    = 'Registered by hand, in no solution, by the Plugin Documenter end to end suite.'
+            description    = 'Registered by hand, in no solution, by the Plugin Step Codegen end to end suite.'
         }
 
         foreach ($type in $assembly.Types) {
@@ -149,7 +149,7 @@ function Register-Unmanaged {
                 filteringattributes = Get-StepValue $step 'Filter' $null
                 # The plugin type goes on EventHandler, which is polymorphic - a step can
                 # equally run a service endpoint - so the binding has to name which kind
-                # this is. PluginTypeId, which is what the documenter's query joins on, is
+                # this is. PluginTypeId, which is what the tool's query joins on, is
                 # the platform's to fill in from it.
                 'eventhandler_plugintype@odata.bind' = "/plugintypes($typeId)"
                 'sdkmessageid@odata.bind'            = "/sdkmessages($($targets.Messages[$step.Message]))"

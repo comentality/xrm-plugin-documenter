@@ -7,7 +7,7 @@ namespace TestPlugins.Alpha
     /// <summary>
     /// Half of the ambiguity fixture. This is the class that is actually registered, but
     /// TestPlugins.Beta.Duplicate declares the same short name in a sibling file, and the
-    /// documenter matches files by short name only. It has to report the pair as ambiguous
+    /// tool matches files by short name only. It has to report the pair as ambiguous
     /// and skip both rather than pick one - so neither file may be modified by a run.
     /// </summary>
     public class Duplicate : IPlugin
