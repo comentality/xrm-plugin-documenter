@@ -1,4 +1,4 @@
-# ![](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/PluginStepCodegen/icon.png) Plugin Step Codegen
+# ![](https://raw.githubusercontent.com/comentality/xrm-plugin-step-codegen/main/PluginStepCodegen/icon.png) Plugin Step Codegen
 
 [![NuGet](https://img.shields.io/nuget/v/Comentality.PluginStepCodegen)](https://www.nuget.org/packages/Comentality.PluginStepCodegen)
 
@@ -12,7 +12,7 @@ compatible `[Plugin]`, `[Step]` and `[Image]` attributes.
 Your registration stops living only in an environment you have to go look at, and starts
 living in the code review, the diff and the git history.
 
-![Plugin Step Codegen: assemblies and classes on the left, the attributes it would write on the right](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-attributes.png)
+![Plugin Step Codegen: assemblies and classes on the left, the attributes it would write on the right](https://raw.githubusercontent.com/comentality/xrm-plugin-step-codegen/main/assets/ui-attributes.png)
 
 ## Why
 
@@ -101,18 +101,18 @@ public partial class CourseHistoryHandler : IPlugin
 Because nothing here has to compile, the comment carries two facts no attribute can
 express: a **disabled** step, and the user a step impersonates, as `As <name>`.
 
-![The same classes with the readable summary comment selected](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-comment.png)
+![The same classes with the readable summary comment selected](https://raw.githubusercontent.com/comentality/xrm-plugin-step-codegen/main/assets/ui-comment.png)
 
 ## Documentation
 
 | | |
 |---|---|
-| [Getting started](https://github.com/comentality/xrm-plugin-documenter/blob/main/docs/getting-started.md) | Install it, connect, and do a first run. |
-| [Choosing assemblies](https://github.com/comentality/xrm-plugin-documenter/blob/main/docs/choosing-assemblies.md) | Why the list starts short, what the two switches hold, and how the filter behaves. |
-| [What gets written](https://github.com/comentality/xrm-plugin-documenter/blob/main/docs/output.md) | Both output modes in full: what is emitted, what is suppressed, and in what order. |
-| [Writing to files](https://github.com/comentality/xrm-plugin-documenter/blob/main/docs/writing-files.md) | How a class is matched to a file, what is replaced, the backups, and the report. |
-| [Attribute definitions file](https://github.com/comentality/xrm-plugin-documenter/blob/main/docs/attribute-definitions.md) | Making the emitted attributes compile, with or without the NuGet package. |
-| [Limits and troubleshooting](https://github.com/comentality/xrm-plugin-documenter/blob/main/docs/limits.md) | What the tool cannot express, and what to do when a run does not go as expected. |
+| [Getting started](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/docs/getting-started.md) | Install it, connect, and do a first run. |
+| [Choosing assemblies](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/docs/choosing-assemblies.md) | Why the list starts short, what the two switches hold, and how the filter behaves. |
+| [What gets written](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/docs/output.md) | Both output modes in full: what is emitted, what is suppressed, and in what order. |
+| [Writing to files](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/docs/writing-files.md) | How a class is matched to a file, what is replaced, the backups, and the report. |
+| [Attribute definitions file](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/docs/attribute-definitions.md) | Making the emitted attributes compile, with or without the NuGet package. |
+| [Limits and troubleshooting](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/docs/limits.md) | What the tool cannot express, and what to do when a run does not go as expected. |
 
 ## Building
 
@@ -145,7 +145,7 @@ it to the same environment and opens it, so testing a change is one command and 
 disturb the XrmToolBox you work in.
 
 Then compare what the tool writes with the expected output in
-[tests/README.md](https://github.com/comentality/xrm-plugin-documenter/blob/main/tests/README.md),
+[tests/README.md](https://github.com/comentality/xrm-plugin-step-codegen/blob/main/tests/README.md),
 which spells out, class by class, exactly what both output modes should produce.
 
 ## License

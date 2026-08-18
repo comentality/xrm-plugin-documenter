@@ -68,5 +68,5 @@ the write.
 
 **Something threw.**
 Errors are shown with their detail rather than swallowed. If it looks like a bug in the
-tool, [open an issue](https://github.com/comentality/xrm-plugin-documenter/issues) with the
+tool, [open an issue](https://github.com/comentality/xrm-plugin-step-codegen/issues) with the
 message and what was ticked at the time.

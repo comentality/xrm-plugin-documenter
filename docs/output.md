@@ -9,7 +9,7 @@ the block reads as an execution plan rather than as whatever order the query ret
 
 ## Xrm Tools attributes
 
-![The attribute output in the preview pane](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-attributes.png)
+![The attribute output in the preview pane](https://raw.githubusercontent.com/comentality/xrm-plugin-step-codegen/main/assets/ui-attributes.png)
 
 ```csharp
 /// <summary>Handles account writes.</summary>
@@ -82,7 +82,7 @@ against both.
 
 ## Readable summary comment
 
-![The summary comment output in the preview pane](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-comment.png)
+![The summary comment output in the preview pane](https://raw.githubusercontent.com/comentality/xrm-plugin-step-codegen/main/assets/ui-comment.png)
 
 The same registration as prose, for the reader rather than the compiler:
 

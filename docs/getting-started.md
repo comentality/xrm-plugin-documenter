@@ -31,7 +31,7 @@ enough.
 
 ## A first run
 
-![The tool with three assemblies ticked and the attribute output in the preview](https://raw.githubusercontent.com/comentality/xrm-plugin-documenter/main/assets/ui-attributes.png)
+![The tool with three assemblies ticked and the attribute output in the preview](https://raw.githubusercontent.com/comentality/xrm-plugin-step-codegen/main/assets/ui-attributes.png)
 
 **1. Load Assemblies.** The list fills with the unmanaged assemblies in the environment —
 the ones somebody is writing rather than the ones somebody shipped. If yours is not there,

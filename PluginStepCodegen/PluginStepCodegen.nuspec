@@ -6,8 +6,8 @@
     <title>Plugin Step Codegen</title>
     <authors>Comentality</authors>
     <license type="expression">MIT</license>
-    <projectUrl>https://github.com/comentality/xrm-plugin-documenter</projectUrl>
-    <repository type="git" url="https://github.com/comentality/xrm-plugin-documenter.git" branch="main" />
+    <projectUrl>https://github.com/comentality/xrm-plugin-step-codegen</projectUrl>
+    <repository type="git" url="https://github.com/comentality/xrm-plugin-step-codegen.git" branch="main" />
     <icon>icon.png</icon>
     <readme>docs\README.md</readme>
     <description>Document Dataverse plugin step registrations directly in your C# source. Reads registered steps and images from the connected environment and writes them back into your plugin classes as Xrm Tools compatible [Plugin], [Step] and [Image] attributes.</description>
