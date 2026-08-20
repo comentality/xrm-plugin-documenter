@@ -84,6 +84,24 @@ namespace PluginStepCodegen.Logic
                 return i < 0 ? TypeName : TypeName.Substring(i + 1);
             }
         }
+
+        /// <summary>
+        /// Leading segments of <see cref="TypeName"/>, empty for a type registered without
+        /// one. Used to settle which file to write when several declare the short name.
+        /// </summary>
+        public string Namespace
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(TypeName))
+                {
+                    return string.Empty;
+                }
+
+                var i = TypeName.LastIndexOf('.');
+                return i < 0 ? string.Empty : TypeName.Substring(0, i);
+            }
+        }
     }
 
     public class PluginStepInfo

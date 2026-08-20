@@ -16,6 +16,7 @@ assemblies: a second vendor, a registration with no source, an assembly with no 
 .\verify.ps1        # confirm the environment matches registrations.psd1
 .\unregister.ps1    # take it all away again
 .\xtb.ps1           # build the tool and open it in an XrmToolBox of its own
+.\write.ps1         # check the write path headlessly, no environment needed
 ```
 
 All four use the active organization of the current `pac` auth profile; pass
@@ -97,6 +98,7 @@ copy of them to be wrong.
 | `build.ps1` | Turns the matrix into three solution zips. `register.ps1` calls it; run it alone to inspect the zips. |
 | `unmanaged.ps1` | The other half of `register.ps1` and `unregister.ps1`: the two assemblies that are in no solution, written and deleted record by record. |
 | `dataverse.ps1` | An access token and four verbs. The only thing here that talks to the environment without going through `pac`. |
+| `write.ps1` | The write path, headlessly: rebuilds from `registrations.psd1` the objects `RegistrationQuery` would have read, runs the real find, emit and write code over sandbox copies of `src\` under `tests\.write`, and checks the reports and files against [Expected output](#expected-output) - including that the registered namespace settles every short name collision, that a second run settles, and that what was written compiles. No environment needed. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
@@ -469,9 +471,18 @@ exists. Afterwards:
 
 ### Alpha.Duplicate
 
-Registered, and reported as **ambiguous**: `Duplicate` is declared by both
-`TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs` and `BetaDuplicate.cs`, and the
-tool matches files by short name. Neither file may be modified.
+`Duplicate` is declared by both `TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs` and
+`BetaDuplicate.cs`, so the short name alone matches two files — and the registered
+namespace `TestPlugins.Alpha` settles it. `AlphaDuplicate.cs` is written; `BetaDuplicate.cs`
+must come back byte for byte identical.
+
+```csharp
+[Plugin]
+[Step("Create", "annotation", Stages.PostOperation, ExecutionMode.Synchronous)]
+```
+```csharp
+/// Sync Post-Create of annotation (order 1): (all columns)
+```
 
 ### NeverRegistered and Beta.Duplicate
 
@@ -556,28 +567,39 @@ also that both writes take a backup and the backup name is only accurate to the 
 the two collide and the pristine original is the copy that gets lost. Whether that is
 acceptable is a decision; that it happens is pinned here.
 
-### Rival - ambiguous across assemblies
+### Rival - settled by namespace across assemblies
 
 `TestPlugins.Rival` and `Contoso.Crm.Rival` are different classes, in different
-namespaces, in different assemblies, in a file each. The namespaces would settle it in a
-moment, but the tool matches on the short name alone, so both are reported as
-ambiguous and **neither file may be modified**:
+namespaces, in different assemblies, in a file each. The short name matches both files,
+and the registered namespace settles which is which: each registration is written into
+its own file, never the other's.
 
+`TestPlugins\Plugins\Rival.cs`:
+
+```csharp
+[Plugin]
+[Step("Delete", "task", Stages.PreOperation, ExecutionMode.Synchronous)]
 ```
-// Ambiguous, several files declare the class (3)
-//   Duplicate (2 files)
-//   Rival (2 files)
-//   Rival (2 files)
+```csharp
+/// Sync Pre-Delete of task (order 1)
 ```
 
-That is with **Managed** on. With it off, only `TestPlugins.Rival` is registered anywhere
-in view — and it is *still* ambiguous, reported once instead of twice, because two files
-under `tests\src` declare a class called `Rival` whatever the environment has been asked
-about. Ambiguity is a property of the source tree, not of the registration, and hiding
-half the registrations does not make the tool any surer which file it meant.
+`ContosoPlugins\Rival.cs`, behind the **Managed** switch:
 
-Alpha.Duplicate is the same failure inside one assembly; Rival is the same failure where
-the answer was available and was not used.
+```csharp
+[Plugin]
+[Step("Delete", "contact", Stages.PreOperation, ExecutionMode.Synchronous)]
+```
+```csharp
+/// Sync Pre-Delete of contact (order 1)
+```
+
+With **Managed** off only `TestPlugins.Rival` is in view, and the tie resolves exactly the
+same way: the namespace is read from the registration and the files, not from which
+assemblies happen to be ticked, so hiding half the registrations changes what is written
+but never where.
+
+Alpha.Duplicate is the same tie inside one assembly; Rival is the same tie across two.
 
 ## Contoso.Crm.Orphan - registered, no source
 
@@ -709,42 +731,36 @@ matter. It is pinned here as behaviour, not endorsed as correct.
 Two reports are worth having, because the tool has two states worth being in.
 
 **The default list**, both switches off, both assemblies ticked, source folder `tests\src`
-- fifteen classes, and the only failures are the ones the source tree causes:
+- fifteen classes, every one resolving to a file — `Duplicate` and `Rival` match two files
+each on the short name, and the registered namespace picks the right one:
 
 ```
-// Updated (13)
+// Updated (15)
 //   ... every class with a file, Twin once
-// Ambiguous, several files declare the class (2)
-//   Duplicate (2 files)
-//   Rival (2 files)
 ```
 
-Run it again and everything says `Already up to date (13)`. This is the run that settles,
+Run it again and everything says `Already up to date (15)`. This is the run that settles,
 which is what a developer documenting their own assembly should get.
 
 **With Managed and Microsoft's both on** and all six assemblies ticked, all twenty two
 classes are accounted for and pressing Write should produce a report of the shape:
 
 ```
-// Updated (17)
+// Updated (20)
 //   ... every class with a file, Twin twice
-// Ambiguous, several files declare the class (3)
-//   Duplicate (2 files)
-//   Rival (2 files)
-//   Rival (2 files)
 // No matching .cs file (2)
 //   Bravo
 //   Ghost
 ```
 
-Seventeen writes over sixteen files, because `Twin` is written once per assembly. Run it a
+Twenty writes over nineteen files, because `Twin` is written once per assembly. Run it a
 second time without changing anything and it becomes:
 
 ```
 // Updated (2)
 //   Twin
 //   Twin
-// Already up to date (15)
+// Already up to date (18)
 ```
 
 `Twin` is the one thing that cannot settle: the two registrations overwrite each other on

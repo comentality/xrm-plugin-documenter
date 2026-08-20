@@ -5,11 +5,10 @@ using XrmTools.Meta.Attributes;
 namespace TestPlugins
 {
     /// <summary>
-    /// Half of the cross assembly ambiguity fixture, the other half being
+    /// Half of the cross assembly collision fixture, the other half being
     /// Contoso.Crm.Rival in ContosoPlugins\Rival.cs. Two assemblies, two files, two
-    /// registrations, and namespaces that would settle it in a moment - but the tool
-    /// matches on the short name alone, so it has to report both as ambiguous and modify
-    /// neither file.
+    /// registrations, one short name - and the namespaces settle it: each registration
+    /// is written into its own file, never the other's.
     /// </summary>
     public class Rival : IPlugin
     {

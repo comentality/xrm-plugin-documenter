@@ -18,13 +18,19 @@ Exactly one match is required.
 
 - **No match** — the class is reported under *No matching .cs file* and nothing is
   written. This is normal for an assembly whose source is not in the folder you chose.
-- **Several matches** — reported as *Ambiguous, several files declare the class*, and
-  **no file is modified**. The namespace would often settle it, but a partial class
-  legitimately spans files and guessing wrong means writing a registration into the wrong
-  class. It is left for you to decide.
+- **Several matches** — the **registered namespace** breaks the tie: when exactly one of
+  the files declares the namespace the type was registered under, that file is the one
+  written. Two projects in the same tree that both define a class of the same short name
+  therefore resolve themselves, as long as their namespaces differ.
+- **Several matches the namespace cannot settle** — reported as *Ambiguous, several files
+  declare the class*, and **no file is modified**. A partial class legitimately spans
+  files in one namespace, and guessing wrong means writing a registration into the wrong
+  class. It is left for you to decide; narrowing the source folder to one project usually
+  does it.
 
-The commonest cause of an ambiguity is two projects in the same tree that both define a
-class of that name. Narrow the source folder to one project and run again.
+The namespace is matched against `namespace X.Y` declarations as written, block or file
+scoped. A namespace declared in nested form — `namespace X { namespace Y {` — is not
+recognised, and the tie stays unresolved rather than the file being ruled out.
 
 ## What is replaced, and what is not
 
@@ -80,7 +86,7 @@ The preview is replaced by a tally of what happened, and a dialog gives the same
 //   Ghost
 
 // Ambiguous, several files declare the class (1)
-//   Rival (2 files)
+//   Worker (2 files)
 ```
 
 *Failed* appears for anything that threw — a file locked by another process, a read-only

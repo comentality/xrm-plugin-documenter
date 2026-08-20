@@ -5,10 +5,10 @@ using XrmTools.Meta.Attributes;
 namespace TestPlugins.Alpha
 {
     /// <summary>
-    /// Half of the ambiguity fixture. This is the class that is actually registered, but
-    /// TestPlugins.Beta.Duplicate declares the same short name in a sibling file, and the
-    /// tool matches files by short name only. It has to report the pair as ambiguous
-    /// and skip both rather than pick one - so neither file may be modified by a run.
+    /// Half of the short-name-collision fixture. This is the class that is actually
+    /// registered; TestPlugins.Beta.Duplicate declares the same short name in a sibling
+    /// file, so the short name alone matches both. The registered namespace settles it:
+    /// a run writes this file and may not touch the sibling.
     /// </summary>
     public class Duplicate : IPlugin
     {

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **The registered namespace now settles a short-name tie.** When several `.cs` files
+  declare a class of the same short name, the file whose `namespace` declaration matches
+  the namespace the type was registered under is the one written, provided exactly one
+  file does. Two projects in one tree with a class name in common no longer come back as
+  *Ambiguous*. A tie the namespace cannot settle — a partial class spanning files, the
+  same namespace declared twice, a namespace declared in nested form — is still reported
+  as ambiguous and no file is touched.
+
 ## 1.0.0
 
 First release.

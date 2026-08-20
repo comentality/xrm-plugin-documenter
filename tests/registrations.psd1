@@ -139,7 +139,8 @@
                 # Registered as a type, but deliberately given no steps.
                 @{ Id = '0a'; Name = 'TestPlugins.NeverRegistered' }
                 @{ Id = '0b'; Name = 'TestPlugins.Alpha.Duplicate' }
-                # Also stepless: it exists only so the short name Duplicate is ambiguous.
+                # Also stepless: it exists only so the short name Duplicate matches two
+                # files and the registered namespace has a tie to settle.
                 @{ Id = '0c'; Name = 'TestPlugins.Beta.Duplicate' }
                 # Same short name as Contoso.Crm.Rival, in a file of its own.
                 @{ Id = '0d'; Name = 'TestPlugins.Rival' }
@@ -265,13 +266,13 @@
                     Description = 'What the file should end up saying, not what it says now.'
                 }
 
-                # --- Registered, but its short name resolves to two files. ---
+                # --- Its short name resolves to two files; the namespace settles it. ---
                 @{
                     Id = '12'; Type = 'TestPlugins.Alpha.Duplicate'
                     Message = 'Create'; Entity = 'annotation'; Stage = 40; Mode = 0; Rank = 1
                 }
 
-                # --- Ambiguous across assemblies: Contoso.Crm.Rival is the other half. ---
+                # --- Collides across assemblies: Contoso.Crm.Rival is the other half. ---
                 @{
                     Id = '13'; Type = 'TestPlugins.Rival'
                     Message = 'Delete'; Entity = 'task'; Stage = 20; Mode = 0; Rank = 1

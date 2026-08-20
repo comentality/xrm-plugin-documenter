@@ -49,9 +49,10 @@ The source folder is pointing somewhere else, or at a folder that only holds com
 output. Point it at the root of your plugin project or repository.
 
 **A class is reported as ambiguous.**
-Two files under the source folder declare a class of that name. Narrow the source folder to
-a single project, or rename one of the classes. Nothing is written for an ambiguous class,
-so no harm has been done.
+Two files under the source folder declare a class of that name, and the registered
+namespace could not settle it — usually because both declare the same namespace, as a
+partial class does. Narrow the source folder to a single project, or rename one of the
+classes. Nothing is written for an ambiguous class, so no harm has been done.
 
 **The write dialog says files were skipped.**
 Read the report in the preview pane — it names every class and the reason. *Failed* entries

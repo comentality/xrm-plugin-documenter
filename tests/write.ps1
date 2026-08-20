@@ -1,0 +1,339 @@
+<#
+.SYNOPSIS
+    Headless end to end check of the write path, judged against registrations.psd1.
+
+.DESCRIPTION
+    register.ps1 and verify.ps1 pin what the environment looks like; this pins what the
+    tool writes when pointed at it. It loads the tool's own DLL, rebuilds from
+    registrations.psd1 exactly the PluginTypeInfo objects RegistrationQuery would have
+    read out of that environment, and runs the real emit and write path over sandbox
+    copies of tests\src - so everything from "which file declares this class" to "does
+    the emitted attribute compile" is exercised without a Dataverse connection.
+
+    The one thing reconstructed rather than read is the impersonating user's full name,
+    which is whoever register.ps1 was signed in as; a stand-in name goes through the same
+    plumbing.
+
+    Two scenarios, matching the write reports in README.md:
+
+      A. The default list - the two unmanaged assemblies - written in attribute mode
+         twice and comment mode twice. Everything resolves to a file, the second pass of
+         each mode changes nothing, and the sandbox TestPlugins project still compiles.
+
+      B. All six assemblies. Bravo and Ghost have no source, Twin is written once per
+         assembly and cannot settle, and nothing is ambiguous: the short names Duplicate
+         and Rival match two files each, and the registered namespace picks the right one.
+
+    Sandboxes live under tests\obj\write and are rebuilt on every run.
+#>
+[CmdletBinding()]
+param([switch] $SkipBuild)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$root = $PSScriptRoot
+. (Join-Path $root 'matrix.ps1')
+
+$manifest = Import-PowerShellDataFile (Join-Path $root 'registrations.psd1')
+
+# ------------------------------------------------------------------ the tool itself
+$project = Join-Path $root '..\PluginStepCodegen\PluginStepCodegen.csproj'
+if (-not $SkipBuild) {
+    dotnet build $project -c Debug --nologo -v q
+    if ($LASTEXITCODE -ne 0) { throw 'The tool did not build.' }
+}
+
+$dll = Resolve-Path (Join-Path $root '..\PluginStepCodegen\bin\Debug\net48\PluginStepCodegen.dll')
+[Reflection.Assembly]::LoadFrom($dll) | Out-Null
+
+# ------------------------------------------------------------------------ sandboxes
+# Not under tests\obj: the tool skips any path with \obj\ in it as build output, so a
+# sandbox there would make every class report "no matching .cs file".
+$work = Join-Path $root '.write'
+if (Test-Path $work) { Remove-Item $work -Recurse -Force }
+
+# TestPlugins.csproj links ..\..\..\assets\XrmToolsMetaAttributes.cs - the very file the
+# tool emits - so the compile check needs the assets folder two levels above each
+# sandbox's src, exactly where the repository keeps it relative to tests\src.
+New-Item -ItemType Directory -Path (Join-Path $work 'assets') -Force | Out-Null
+Copy-Item (Join-Path $root '..\assets\XrmToolsMetaAttributes.cs') (Join-Path $work 'assets')
+
+function New-Sandbox {
+    param([string] $Name)
+
+    $dest = Join-Path $work "$Name\src"
+    robocopy (Join-Path $root 'src') $dest /MIR /XD obj bin /XF *.bak /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed with $LASTEXITCODE" }
+    $dest
+}
+
+function Get-SourceHashes {
+    param([string] $Folder)
+
+    $hashes = @{}
+    foreach ($file in Get-ChildItem $Folder -Recurse -Filter *.cs |
+        Where-Object { $_.FullName -notmatch '\\(obj|bin)\\' }) {
+        $hashes[$file.FullName.Substring($Folder.Length + 1)] = (Get-FileHash $file.FullName).Hash
+    }
+    $hashes
+}
+
+# ------------------------------------------------- registrations.psd1 -> the tool's model
+# Mirrors RegistrationQuery: only types with steps, types by name, steps by stage, rank,
+# message; a step keeps the name Dataverse generated unless the fixture typed one.
+function Get-TypeModels {
+    param([hashtable] $Assembly)
+
+    # A description imported in a solution loses its CRLF: XML normalises line endings
+    # inside an element. The unmanaged route keeps them. See Contoso.Crm.Charlie.
+    $managed = $null -ne $Assembly.Solution
+
+    foreach ($t in $Assembly.Types | Sort-Object { $_.Name }) {
+        $steps = @($Assembly.Steps | Where-Object { $_.Type -eq $t.Name })
+        if ($steps.Count -eq 0) { continue }
+
+        $type = New-Object PluginStepCodegen.Logic.PluginTypeInfo
+        $type.Id = [guid](Get-TypeId $Assembly $t)
+        $type.AssemblyId = [guid](Get-AssemblyId $Assembly)
+        $type.TypeName = $t.Name
+        $type.FriendlyName = Get-FriendlyName $Assembly $t.Name
+        if ($t.ContainsKey('Description')) { $type.Description = $t.Description }
+
+        foreach ($s in $steps | Sort-Object { $_.Stage }, { $_.Rank }, { $_.Message }) {
+            $step = New-Object PluginStepCodegen.Logic.PluginStepInfo
+            $step.Id = [guid](Get-StepId $Assembly $s)
+            $step.MessageName = $s.Message
+            $step.PrimaryEntityName = if ($s.ContainsKey('Entity')) { $s.Entity } else { $null }
+            $step.Stage = $s.Stage
+            $step.Mode = $s.Mode
+            $step.Rank = $s.Rank
+            $step.Name = Get-StepName $s
+            $step.FilteringAttributes = Get-StepValue $s 'Filter' $null
+            $step.Configuration = Get-StepValue $s 'Configuration' $null
+            $step.AsyncAutoDelete = [bool](Get-StepValue $s 'AsyncAutoDelete' $false)
+            $step.IsDisabled = [bool](Get-StepValue $s 'Disabled' $false)
+            if (Get-StepValue $s 'Impersonate' $false) { $step.ImpersonatingUser = 'E2E Test User' }
+
+            $description = Get-StepValue $s 'Description' $null
+            if ($null -ne $description) {
+                $step.Description = if ($managed) { $description -replace "`r`n", "`n" } else { $description }
+            }
+
+            foreach ($i in (Get-StepImages $s) | Sort-Object { $_.Type }) {
+                $image = New-Object PluginStepCodegen.Logic.PluginImageInfo
+                $image.ImageType = $i.Type
+                $image.EntityAlias = $i.Alias
+                $image.Name = $i.Name
+                $image.Attributes = Get-StepValue $i 'Attributes' $null
+                $image.MessagePropertyName = Get-StepValue $i 'Property' 'Target'
+                $step.Images.Add($image)
+            }
+
+            $type.Steps.Add($step)
+        }
+
+        $type
+    }
+}
+
+# Assemblies in the order the tool lists them - by name - each contributing its types.
+function Get-CheckedTypes {
+    param([scriptblock] $Where)
+
+    , @(foreach ($assembly in $manifest.Assemblies | Where-Object $Where | Sort-Object { $_.Name }) {
+        Get-TypeModels $assembly
+    })
+}
+
+# --------------------------------------------------------------------- one Write press
+# The same loop as BtnWrite_Click: find the file, skip or write, tally what happened.
+function Invoke-WriteRun {
+    param([string] $Folder, $Types, [ValidateSet('Attributes', 'Comment')] [string] $Mode)
+
+    $r = [ordered]@{ Updated = @(); Unchanged = @(); NotFound = @(); Ambiguous = @(); Failed = @() }
+    foreach ($type in $Types) {
+        try {
+            $ambiguous = $null
+            $file = [PluginStepCodegen.Logic.CodeFileWriter]::FindFile(
+                $Folder, $type.ClassName, $type.Namespace, [ref] $ambiguous)
+
+            if ($null -ne $ambiguous) { $r.Ambiguous += $type.TypeName; continue }
+            if ($null -eq $file) { $r.NotFound += $type.ClassName; continue }
+
+            # Assigned straight from the method calls: an if-expression would push the
+            # List<string> through the pipeline and unroll it into an object[], which
+            # does not bind to the IEnumerable<string> parameters below.
+            $remarks = $null
+            $attributes = $null
+            if ($Mode -eq 'Comment') { $remarks = [PluginStepCodegen.Logic.RemarksEmitter]::Emit($type) }
+            if ($Mode -eq 'Attributes') { $attributes = [PluginStepCodegen.Logic.AttributeEmitter]::Emit($type) }
+
+            if ([PluginStepCodegen.Logic.CodeFileWriter]::Update($file, $type.ClassName, $remarks, $attributes)) {
+                $r.Updated += $type.ClassName
+            } else {
+                $r.Unchanged += $type.ClassName
+            }
+        } catch {
+            $r.Failed += "$($type.ClassName): $_"
+        }
+    }
+    $r
+}
+
+# ------------------------------------------------------------------------- the checks
+$script:passed = 0
+$script:failures = @()
+
+function Check {
+    param([string] $Description, [bool] $Condition, [string] $Detail = '')
+
+    if ($Condition) {
+        $script:passed++
+        Write-Host "  ok    $Description"
+    } else {
+        $script:failures += "$Description $Detail".Trim()
+        Write-Host "  FAIL  $Description  $Detail" -ForegroundColor Red
+    }
+}
+
+function Format-Report {
+    param($Report)
+
+    $counts = (@('Updated', 'Unchanged', 'NotFound', 'Ambiguous', 'Failed') |
+        ForEach-Object { "$_=$(@($Report[$_]).Count)" }) -join ' '
+    if (@($Report.Failed).Count -gt 0) { $counts += "; first failure: $($Report.Failed[0])" }
+    $counts
+}
+
+function Test-FileContains {
+    param([string] $Folder, [string] $Path, [string] $Needle, [bool] $Expected = $true)
+
+    $content = Get-Content (Join-Path $Folder $Path) -Raw
+    $verb = if ($Expected) { 'contains' } else { 'does not contain' }
+    Check "$Path $verb $Needle" (($content.Contains($Needle)) -eq $Expected)
+}
+
+# =========================================================== A. the default list
+Write-Host "Scenario A - the default list, attribute mode then comment mode, twice each"
+
+$sandboxA = New-Sandbox 'a'
+$before = Get-SourceHashes $sandboxA
+$defaultTypes = Get-CheckedTypes { $null -eq $_.Solution }
+
+Check 'fifteen classes in the default list' ($defaultTypes.Count -eq 15) "(got $($defaultTypes.Count))"
+
+$a1 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
+Check 'attributes: all fifteen updated, nothing skipped' `
+    (@($a1.Updated).Count -eq 15 -and @($a1.Ambiguous).Count -eq 0 -and
+     @($a1.NotFound).Count -eq 0 -and @($a1.Failed).Count -eq 0) "($(Format-Report $a1))"
+
+$a2 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
+Check 'attributes again: all fifteen already up to date' `
+    (@($a2.Unchanged).Count -eq 15 -and @($a2.Updated).Count -eq 0) "($(Format-Report $a2))"
+
+$a3 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
+Check 'comment: all fifteen updated' (@($a3.Updated).Count -eq 15) "($(Format-Report $a3))"
+
+$a4 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
+Check 'comment again: all fifteen already up to date' `
+    (@($a4.Unchanged).Count -eq 15 -and @($a4.Updated).Count -eq 0) "($(Format-Report $a4))"
+
+# The namespace settles both short name collisions in this view.
+Test-FileContains $sandboxA 'TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs' `
+    '[Step("Create", "annotation", Stages.PostOperation, ExecutionMode.Synchronous)]'
+Test-FileContains $sandboxA 'TestPlugins\Plugins\Rival.cs' `
+    '[Step("Delete", "task", Stages.PreOperation, ExecutionMode.Synchronous)]'
+
+# The impersonation stand-in went through the same plumbing the real name would.
+Test-FileContains $sandboxA 'TestPlugins\Plugins\DisabledAndImpersonated.cs' 'E2E Test User'
+
+# Exactly the fifteen files, and nothing else, changed.
+$expectedChangedA = @(
+    'TestPlugins\Plugins\SimpleCreate.cs'
+    'TestPlugins\Plugins\FilteredUpdate.cs'
+    'TestPlugins\Plugins\AsyncWorker.cs'
+    'TestPlugins\Plugins\GlobalMessageHandler.cs'
+    'TestPlugins\Plugins\ImageShapes.cs'
+    'TestPlugins\Plugins\DisabledAndImpersonated.cs'
+    'TestPlugins\Plugins\EscapedText.cs'
+    'TestPlugins\Plugins\WideRegistration.cs'
+    'TestPlugins\Plugins\HandWritten.cs'
+    'TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs'
+    'TestPlugins\Plugins\Rival.cs'
+    'Shared\Twin.cs'
+    'WorkInProgressPlugins\NewFeature.cs'
+    'WorkInProgressPlugins\HalfFinished.cs'
+    'WorkInProgressPlugins\Scratch.cs'
+)
+$after = Get-SourceHashes $sandboxA
+$changed = @($before.Keys | Where-Object { $before[$_] -ne $after[$_] } | Sort-Object)
+$unexpected = @($changed | Where-Object { $expectedChangedA -notcontains $_ })
+$unwritten = @($expectedChangedA | Where-Object { $changed -notcontains $_ })
+Check 'exactly the fifteen expected files changed' `
+    ($unexpected.Count -eq 0 -and $unwritten.Count -eq 0) `
+    "(unexpected: $($unexpected -join ', '); missed: $($unwritten -join ', '))"
+
+Check 'every changed file left a .bak beside it' `
+    (@($expectedChangedA | Where-Object {
+        -not (Get-ChildItem (Join-Path $sandboxA $_).Replace('.cs', '.cs.*.bak') -ErrorAction SilentlyContinue)
+    }).Count -eq 0)
+
+# The emitted attributes compile - against the very definitions file the tool drops.
+dotnet build (Join-Path $sandboxA 'TestPlugins') -c Debug --nologo -v q | Out-Null
+Check 'the written TestPlugins project compiles' ($LASTEXITCODE -eq 0)
+
+# ========================================================== B. all six assemblies
+Write-Host "Scenario B - all six assemblies, attribute mode, twice"
+
+$sandboxB = New-Sandbox 'b'
+$beforeB = Get-SourceHashes $sandboxB
+$allTypes = Get-CheckedTypes { $true }
+
+Check 'twenty two classes with all assemblies ticked' ($allTypes.Count -eq 22) "(got $($allTypes.Count))"
+
+$b1 = Invoke-WriteRun $sandboxB $allTypes 'Attributes'
+Check 'twenty updated, none ambiguous' `
+    (@($b1.Updated).Count -eq 20 -and @($b1.Ambiguous).Count -eq 0 -and @($b1.Failed).Count -eq 0) `
+    "($(Format-Report $b1))"
+Check 'only Bravo and Ghost have no source' `
+    ((@($b1.NotFound) | Sort-Object) -join ',' -eq 'Bravo,Ghost') "(got $($b1.NotFound -join ', '))"
+Check 'Twin written once per assembly' (@($b1.Updated | Where-Object { $_ -eq 'Twin' }).Count -eq 2)
+
+$b2 = Invoke-WriteRun $sandboxB $allTypes 'Attributes'
+Check 'second run: only Twin cannot settle' `
+    ((@($b2.Updated) -join ',') -eq 'Twin,Twin' -and @($b2.Unchanged).Count -eq 18) "($(Format-Report $b2))"
+
+# Each Rival registration landed in its own file, never the other's.
+Test-FileContains $sandboxB 'TestPlugins\Plugins\Rival.cs' `
+    '[Step("Delete", "task", Stages.PreOperation, ExecutionMode.Synchronous)]'
+Test-FileContains $sandboxB 'TestPlugins\Plugins\Rival.cs' '"contact"' $false
+Test-FileContains $sandboxB 'ContosoPlugins\Rival.cs' `
+    '[Step("Delete", "contact", Stages.PreOperation, ExecutionMode.Synchronous)]'
+Test-FileContains $sandboxB 'ContosoPlugins\Rival.cs' '"task"' $false
+
+# Twin holds the registration written last: TestPlugins', in assembly order.
+Test-FileContains $sandboxB 'Shared\Twin.cs' 'ExecutionOrder = 3'
+Test-FileContains $sandboxB 'Shared\Twin.cs' 'ExecutionOrder = 4' $false
+
+# The files no run may touch came back byte for byte identical.
+$afterB = Get-SourceHashes $sandboxB
+foreach ($path in @(
+    'TestPlugins\Plugins\Duplicates\BetaDuplicate.cs'
+    'TestPlugins\Plugins\NeverRegistered.cs'
+    'ContosoPlugins\StaleDoc.cs'
+    'ContosoPlugins\Untouched.cs'
+)) {
+    Check "$path untouched" ($beforeB[$path] -eq $afterB[$path])
+}
+
+# ------------------------------------------------------------------------------ tally
+Write-Host ''
+if ($script:failures.Count -eq 0) {
+    Write-Host "All $script:passed checks passed." -ForegroundColor Green
+    exit 0
+}
+
+Write-Host "$($script:failures.Count) of $($script:passed + $script:failures.Count) checks failed:" -ForegroundColor Red
+$script:failures | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+exit 1

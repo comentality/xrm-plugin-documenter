@@ -867,7 +867,7 @@ namespace PluginStepCodegen
                 try
                 {
                     List<string> ambiguous;
-                    var file = CodeFileWriter.FindFile(folder, type.ClassName, out ambiguous);
+                    var file = CodeFileWriter.FindFile(folder, type.ClassName, type.Namespace, out ambiguous);
 
                     if (ambiguous != null)
                     {

@@ -46,10 +46,24 @@ namespace PluginStepCodegen.Logic
         }
 
         /// <summary>
+        /// Matches a declaration of exactly this namespace, block or file scoped. A nested
+        /// declaration (<c>namespace A { namespace B {</c>) is not recognised, deliberately:
+        /// the caller uses a failed match to leave a tie unresolved, never to disqualify the
+        /// only file, so the miss is safe in the one direction it can happen.
+        /// </summary>
+        public static Regex NamespaceDeclaration(string namespaceName)
+        {
+            return new Regex(
+                @"(?m)^[ \t]*namespace[ \t]+" + Regex.Escape(namespaceName) + @"\s*[{;]");
+        }
+
+        /// <summary>
         /// Finds the single .cs file declaring <paramref name="className"/>. Returns null
         /// when there is no match; sets <paramref name="ambiguous"/> when there are several.
+        /// When several files declare the short name, the registered namespace breaks the
+        /// tie if exactly one of them declares it.
         /// </summary>
-        public static string FindFile(string folder, string className, out List<string> ambiguous)
+        public static string FindFile(string folder, string className, string namespaceName, out List<string> ambiguous)
         {
             ambiguous = null;
             var declaration = ClassDeclaration(className);
@@ -59,6 +73,20 @@ namespace PluginStepCodegen.Logic
                 .Where(f => !IsGenerated(f))
                 .Where(f => declaration.IsMatch(ReadAllText(f)))
                 .ToList();
+
+            // Only exactly one survivor settles a tie. Zero means the namespace was not
+            // found as written - possibly declared nested, possibly the registration is
+            // stale - and two or more is a partial class spanning files, and in either
+            // case picking a file would mean writing a registration into the wrong class.
+            if (matches.Count > 1 && !string.IsNullOrEmpty(namespaceName))
+            {
+                var ns = NamespaceDeclaration(namespaceName);
+                var narrowed = matches.Where(f => ns.IsMatch(ReadAllText(f))).ToList();
+                if (narrowed.Count == 1)
+                {
+                    matches = narrowed;
+                }
+            }
 
             if (matches.Count == 0)
             {
