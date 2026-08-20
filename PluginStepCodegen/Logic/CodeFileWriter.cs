@@ -65,13 +65,30 @@ namespace PluginStepCodegen.Logic
         /// </summary>
         public static string FindFile(string folder, string className, string namespaceName, out List<string> ambiguous)
         {
+            var files = EnumerateSources(folder)
+                .Select(f => new KeyValuePair<string, string>(f, ReadAllText(f)));
+            return FindInFiles(files, className, namespaceName, out ambiguous);
+        }
+
+        /// <summary>Every .cs file under the folder that somebody wrote, as opposed to a build's.</summary>
+        public static IEnumerable<string> EnumerateSources(string folder)
+        {
+            return Directory
+                .EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !IsGenerated(f));
+        }
+
+        /// <summary>
+        /// The matching behind <see cref="FindFile"/>, over texts already read, so the scan
+        /// that marks the lists and the write that trusts those marks cannot disagree.
+        /// </summary>
+        public static string FindInFiles(IEnumerable<KeyValuePair<string, string>> files, string className, string namespaceName, out List<string> ambiguous)
+        {
             ambiguous = null;
             var declaration = ClassDeclaration(className);
 
-            var matches = Directory
-                .EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)
-                .Where(f => !IsGenerated(f))
-                .Where(f => declaration.IsMatch(ReadAllText(f)))
+            var matches = files
+                .Where(f => declaration.IsMatch(f.Value))
                 .ToList();
 
             // Only exactly one survivor settles a tie. Zero means the namespace was not
@@ -81,7 +98,7 @@ namespace PluginStepCodegen.Logic
             if (matches.Count > 1 && !string.IsNullOrEmpty(namespaceName))
             {
                 var ns = NamespaceDeclaration(namespaceName);
-                var narrowed = matches.Where(f => ns.IsMatch(ReadAllText(f))).ToList();
+                var narrowed = matches.Where(f => ns.IsMatch(f.Value)).ToList();
                 if (narrowed.Count == 1)
                 {
                     matches = narrowed;
@@ -95,11 +112,11 @@ namespace PluginStepCodegen.Logic
 
             if (matches.Count > 1)
             {
-                ambiguous = matches;
+                ambiguous = matches.Select(f => f.Key).ToList();
                 return null;
             }
 
-            return matches[0];
+            return matches[0].Key;
         }
 
         private static bool IsGenerated(string path)
@@ -211,6 +228,76 @@ namespace PluginStepCodegen.Logic
             }
 
             return sb.Append(tail).ToString();
+        }
+
+        /// <summary>
+        /// Where a matched file stands relative to what a write would put in it.
+        /// </summary>
+        public enum WriteState
+        {
+            /// <summary>Nothing of this tool's in the file yet; a write would add it.</summary>
+            Missing,
+            /// <summary>The file already says exactly what the registration says.</summary>
+            Current,
+            /// <summary>This tool's output is present but no longer matches the registration.</summary>
+            Stale
+        }
+
+        /// <summary>
+        /// Classifies without writing: the same splice a write would do, compared against
+        /// what is there. Null outputs mean the same here as in <see cref="Splice"/> - not
+        /// this mode's concern - so the state is always about the mode that is selected.
+        /// </summary>
+        public static WriteState StateOf(string code, string className, IEnumerable<string> remarks, IEnumerable<string> attributes)
+        {
+            string updated;
+            try
+            {
+                updated = Splice(code, className, remarks, attributes);
+            }
+            catch (InvalidOperationException)
+            {
+                return WriteState.Missing;
+            }
+
+            if (string.Equals(code, updated, StringComparison.Ordinal))
+            {
+                return WriteState.Current;
+            }
+
+            return HasOwnedOutput(code, className, attributes != null) ? WriteState.Stale : WriteState.Missing;
+        }
+
+        /// <summary>
+        /// Whether the class already carries this tool's output in the given mode: owned
+        /// attributes directly above the declaration, or the marked remarks block above those.
+        /// </summary>
+        private static bool HasOwnedOutput(string code, string className, bool attributeMode)
+        {
+            var match = ClassDeclaration(className).Match(code);
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            var head = code.Substring(0, match.Index);
+            while (true)
+            {
+                var attribute = TrailingAttribute.Match(head);
+                if (!attribute.Success)
+                {
+                    break;
+                }
+
+                if (attributeMode && OwnedAttribute.IsMatch(attribute.Value))
+                {
+                    return true;
+                }
+
+                head = head.Substring(0, attribute.Index);
+            }
+
+            return !attributeMode && TrailingRemarks.IsMatch(head);
         }
 
         /// <summary>
