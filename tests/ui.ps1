@@ -35,7 +35,8 @@ if (-not $OutputDir) {
 
 # A path that reads like somebody's plugin project rather than like this machine. It has to exist,
 # because the control greys its buttons out and says so for a folder that does not - which is the
-# right render, and the wrong screenshot. Nothing is ever written to it.
+# right render, and the wrong screenshot. When created here it is created empty, and the harness
+# then seeds it with sample source files for the scan column; it is removed again below.
 $docsFolder = "C:\src\Contoso.Plugins\Plugins"
 
 if (-not $NoBuild) {
@@ -98,7 +99,7 @@ try {
         Write-Host "$($width)x$($height)  ->  $path"
     }
 } finally {
-    if ($madeDocsFolder) { Remove-Item $docsFolder -Force -ErrorAction SilentlyContinue }
+    if ($madeDocsFolder) { Remove-Item $docsFolder -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 if ($failed) { exit 1 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -45,7 +46,11 @@ namespace PluginStepCodegen.UiHarness
             var height = int.Parse(args[1]);
             var outPath = args[2];
             var comment = args.Length > 3 && args[3].Equals("comment", StringComparison.OrdinalIgnoreCase);
-            var folder = args.Length > 4 ? args[4] : null;
+            // The source column scans whatever this points at, so the default is a seeded sample
+            // tree beside the shots rather than this machine's own files.
+            var folder = args.Length > 4
+                ? args[4]
+                : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[2])), "sample-src");
             var title = args.Length > 5 ? args[5] : "Plugin Step Codegen UI harness";
 
             // Without this a layout mistake surfaces as a modal error dialog on a machine nobody
@@ -74,8 +79,9 @@ namespace PluginStepCodegen.UiHarness
                 catch (Exception ex) { failures.Add(ex.ToString()); }
 
                 // Let the form settle before grabbing it: the lists redistribute their columns on
-                // resize, and the preview is debounced and then coloured in a pass of its own.
-                var settle = new Timer { Interval = 700 };
+                // resize, the preview is debounced and then coloured in a pass of its own, and the
+                // source scan runs on a worker and lands whenever it lands.
+                var settle = new Timer { Interval = 1800 };
                 settle.Tick += (s2, e2) =>
                 {
                     settle.Stop();
@@ -165,11 +171,15 @@ namespace PluginStepCodegen.UiHarness
                 typesByAssembly[assembly.Id] = SampleTypes(assembly);
             }
 
-            // A folder that exists, so the buttons render enabled - the control greys them out and
-            // says so otherwise, which is the honest render for a path that is not there. Defaults
-            // to the harness's own output folder; nothing is written to either.
-            Field<TextBox>(control, "_txtFolder").Text =
-                folder ?? AppDomain.CurrentDomain.BaseDirectory;
+            // A folder that exists and holds one of everything the scan can find - a current file,
+            // a stale one, plain ones, a duplicate pair, an unregistered class - so the source
+            // column and every mark it feeds render in one shot. Seeded only when the folder is
+            // empty or absent; a folder that already has files in it is left alone.
+            SeedSourceFolder(folder, typesByAssembly);
+            Field<TextBox>(control, "_txtFolder").Text = folder;
+
+            // The state being faked is "assemblies loaded", and a real load enables this.
+            Field<Button>(control, "_btnRefresh").Enabled = true;
 
             if (comment)
             {
@@ -178,6 +188,105 @@ namespace PluginStepCodegen.UiHarness
 
             Invoke(control, "RenderAssemblies");
             Invoke(control, "RenderTypes");
+
+            // An env var rather than yet another positional argument: only one shot ever wants
+            // the output pane collapsed, and the click is the honest way to get there. Deferred
+            // until the background scan has rendered, which is the order a person does it in:
+            // load, look, collapse.
+            if (Environment.GetEnvironmentVariable("UIHARNESS_COLLAPSE_PREVIEW") == "1")
+            {
+                var collapse = new Timer { Interval = 1200 };
+                collapse.Tick += (s, e) =>
+                {
+                    collapse.Stop();
+                    Field<Button>(control, "_btnPreviewToggle").PerformClick();
+                    // And a rescan at the collapsed width, so the shot proves the list can be
+                    // rebuilt while it is wide - the case a resize glitch would eat rows in.
+                    Invoke(control, "StartScan");
+                };
+                collapse.Start();
+            }
+        }
+
+        /// <summary>
+        /// One source file per state the scan can report. WebhookRetryHandler deliberately gets
+        /// no file (not found), OpportunityCloseAudit gets two in the same namespace (ambiguous),
+        /// and two classes exist that nothing registers.
+        /// </summary>
+        private static void SeedSourceFolder(string folder, Dictionary<Guid, List<PluginTypeInfo>> typesByAssembly)
+        {
+            if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any())
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(folder);
+            var byName = typesByAssembly.Values.SelectMany(t => t).ToDictionary(t => t.ClassName);
+
+            Seed(folder, @"Shared\PluginBase.cs",
+                PluginFile("Contoso.Plugins.Shared", "PluginBase", "IPlugin", isAbstract: true));
+            Seed(folder, @"Accounts\AccountPreValidation.cs",
+                WithAttributes(byName["AccountPreValidation"], stale: false));
+            Seed(folder, @"Accounts\AccountNumberGenerator.cs",
+                WithAttributes(byName["AccountNumberGenerator"], stale: true));
+            Seed(folder, @"Contacts\ContactDeduplication.cs",
+                PluginFile("Contoso.Plugins.Contacts", "ContactDeduplication", "PluginBase"));
+            Seed(folder, @"Opportunities\OpportunityCloseAudit.cs",
+                PluginFile("Contoso.Plugins.Opportunities", "OpportunityCloseAudit", "PluginBase"));
+            Seed(folder, @"Legacy\OpportunityCloseAudit.cs",
+                PluginFile("Contoso.Plugins.Opportunities", "OpportunityCloseAudit", "PluginBase"));
+            Seed(folder, @"Integration\ErpOrderSync.cs",
+                PluginFile("Contoso.Integration.Plugins", "ErpOrderSync", "PluginBase"));
+            Seed(folder, @"Contacts\ContactMerger.cs",
+                PluginFile("Contoso.Plugins.Contacts", "ContactMerger", "IPlugin"));
+            Seed(folder, @"Leads\LeadScoring.cs",
+                PluginFile("Contoso.Plugins.Leads", "LeadScoring", "PluginBase"));
+        }
+
+        private static void Seed(string folder, string relative, string content)
+        {
+            var path = Path.Combine(folder, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, content);
+        }
+
+        /// <summary>
+        /// The registration's own attributes spliced in, exactly as a write would leave them -
+        /// which is what "current" means. Stale trims the emission to one step first, so the
+        /// file carries this tool's output and no longer matches.
+        /// </summary>
+        private static string WithAttributes(PluginTypeInfo type, bool stale)
+        {
+            var emitted = type;
+            if (stale)
+            {
+                emitted = new PluginTypeInfo
+                {
+                    Id = type.Id,
+                    AssemblyId = type.AssemblyId,
+                    TypeName = type.TypeName,
+                    Steps = type.Steps.Take(1).ToList()
+                };
+            }
+
+            var bare = PluginFile(type.Namespace, type.ClassName, "PluginBase");
+            return CodeFileWriter.Splice(bare, type.ClassName, null, AttributeEmitter.Emit(emitted));
+        }
+
+        private static string PluginFile(string ns, string className, string baseName, bool isAbstract = false)
+        {
+            return "using System;\r\n"
+                   + "using Microsoft.Xrm.Sdk;\r\n"
+                   + "\r\n"
+                   + "namespace " + ns + "\r\n"
+                   + "{\r\n"
+                   + "    public " + (isAbstract ? "abstract " : "") + "class " + className + " : " + baseName + "\r\n"
+                   + "    {\r\n"
+                   + "        public void Execute(IServiceProvider serviceProvider)\r\n"
+                   + "        {\r\n"
+                   + "        }\r\n"
+                   + "    }\r\n"
+                   + "}\r\n";
         }
 
         private static List<AssemblyInfo> SampleAssemblies()
