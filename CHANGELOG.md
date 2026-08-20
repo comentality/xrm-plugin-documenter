@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **A third column holds the source folder against the registrations.** The folder picker
+  moved there from above the preview, and as soon as a folder and loaded classes exist the
+  tool scans in the background and keeps a ledger: which registered classes have a `.cs`
+  file (*current*, *stale* — the tool's output is present but no longer matches the
+  registration — or nothing written yet), which have **no file**, which are **ambiguous**,
+  and which plugin classes sit **in the folder with no registration** behind them. Every
+  class row carries the verdict as a glyph (✓ ✎ ✗ ⚠), every assembly row a roll-up
+  (`4/5 ⚠`), and selecting a row in either list highlights it in the other. What used to be
+  discovered by pressing *Write to Files* is now on screen before it.
+- **Write to both files when ambiguous.** A checkbox that only appears when the scan has
+  found an ambiguity. Off, an ambiguous class is skipped as before; on, every file
+  declaring the class gets the same output — the splice replaces only the tool's own
+  block, so the partial-class case the ambiguity usually is ends up documented on both
+  halves.
+- **The preview is togglable.** A *Preview ▸* button in the write toolbar collapses the
+  code view and hands its width to the source column, for the sessions that are about
+  auditing the marks rather than reading what would be written; *◂ Preview* brings it
+  back. The write controls sit above both panes and stay put either way.
+- **Refresh.** Rereads the assemblies and their steps without resetting the session:
+  what is ticked, what is excluded, the filter and the folder all survive. For the loop
+  the tool lives in — register from the IDE, come back, refresh, write.
+- The hint above the buttons now says what a write would do (`Will write 5 classes ·
+  2 skipped (1 no file, 1 ambiguous)`) instead of going quiet once the folder was valid.
+
 - **The registered namespace now settles a short-name tie.** When several `.cs` files
   declare a class of the same short name, the file whose `namespace` declaration matches
   the namespace the type was registered under is the one written, provided exactly one

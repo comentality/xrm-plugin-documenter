@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Xrm.Sdk;
 using PluginStepCodegen.Logic;
@@ -42,7 +44,9 @@ namespace PluginStepCodegen
 
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
+        private SplitContainer _rightSplit;
         private Button _btnLoadAssemblies;
+        private Button _btnRefresh;
         private CheckBox _chkShowMicrosoft;
         private CheckBox _chkShowManaged;
         private TextBox _txtFilter;
@@ -66,12 +70,32 @@ namespace PluginStepCodegen
         private TableLayoutPanel _toolbar;
         private TextBox _txtFolder;
         private Button _btnBrowse;
+        private Label _lblScanStatus;
+        private ListView _lvSource;
+        private Button _btnPreviewToggle;
         private RadioButton _rbAttributes;
         private RadioButton _rbComment;
         private Button _btnWrite;
         private Button _btnCreateDefinitions;
+        private CheckBox _chkWriteAmbiguous;
         private Label _lblWriteHint;
         private RichTextBox _txtPreview;
+
+        /// <summary>A folder path is typed a character at a time; the scan waits for the last one.</summary>
+        private Timer _scanSettled;
+
+        /// <summary>The latest look at the source folder, null until there is one to look at.</summary>
+        private FolderScan _scan;
+
+        /// <summary>Bumped whenever a scan starts, so a slow one landing late is thrown away.</summary>
+        private int _scanGeneration;
+
+        /// <summary>Set while one list's selection is being echoed into the other.</summary>
+        private bool _syncingSelection;
+
+        private static readonly Color GlyphGreen = Color.FromArgb(26, 127, 55);
+        private static readonly Color GlyphAmber = Color.FromArgb(154, 103, 0);
+        private static readonly Color GlyphRed = Color.Firebrick;
 
         public PluginStepCodegenControl()
         {
@@ -110,14 +134,30 @@ namespace PluginStepCodegen
             leftToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             leftToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
 
+            // Sized to their captions rather than round numbers: with Refresh beside it, the row
+            // has to fit the pane at its resting width or the switches fall to a second line.
             _btnLoadAssemblies = new Button
             {
                 Text = "Load Assemblies",
-                Width = 150,
+                Width = 122,
                 Height = 26,
-                Margin = new Padding(0, 0, 8, 4)
+                Margin = new Padding(0, 0, 6, 4)
             };
             _btnLoadAssemblies.Click += BtnLoadAssemblies_Click;
+
+            // Rereads the environment without resetting the session: what is ticked, what is
+            // excluded, the filter and the folder all survive. For the loop this tool lives in -
+            // register from the IDE, come back, refresh, write.
+            _btnRefresh = new Button
+            {
+                Text = "Refresh",
+                Width = 64,
+                Height = 26,
+                Enabled = false,
+                Margin = new Padding(0, 0, 6, 4)
+            };
+            _btnRefresh.Click += BtnRefresh_Click;
+
             _chkShowMicrosoft = new CheckBox
             {
                 Text = "Microsoft's",
@@ -180,7 +220,7 @@ namespace PluginStepCodegen
 
             // Both on one wrapping row of their own: in a cell of the grid the button would set the
             // width of the whole first column and the filter box would start where it ends.
-            var loadRow = Row(_btnLoadAssemblies, _chkShowMicrosoft, _chkShowManaged);
+            var loadRow = Row(_btnLoadAssemblies, _btnRefresh, _chkShowMicrosoft, _chkShowManaged);
             leftToolbar.Controls.Add(loadRow, 0, 0);
             leftToolbar.SetColumnSpan(loadRow, 2);
             leftToolbar.Controls.Add(lblFilter, 0, 1);
@@ -202,10 +242,11 @@ namespace PluginStepCodegen
             };
             _lvAssemblies.Columns.Add("Assembly");
             _lvAssemblies.Columns.Add("Isolation");
+            _lvAssemblies.Columns.Add("Source");
             // The floor sits just under what the pane's own minimum leaves once a scrollbar has
             // taken its share, so the fallback to sideways scrolling is reserved for a pane
             // narrower than the splitter will allow.
-            ShareWidthBetweenColumns(_lvAssemblies, 230, 0.74f, 0.26f);
+            ShareWidthBetweenColumns(_lvAssemblies, 230, 0.52f, 0.24f, 0.24f);
             _lvAssemblies.ItemChecked += LvAssemblies_ItemChecked;
 
             _checkSettled = new Timer { Interval = 120 };
@@ -240,25 +281,34 @@ namespace PluginStepCodegen
             };
             _lvTypes.Columns.Add("Plugin Class");
             _lvTypes.Columns.Add("Steps", -1, HorizontalAlignment.Right);
-            ShareWidthBetweenColumns(_lvTypes, 230, 0.8f, 0.2f);
+            _lvTypes.Columns.Add("Source");
+            ShareWidthBetweenColumns(_lvTypes, 230, 0.62f, 0.16f, 0.22f);
             _lvTypes.ItemChecked += LvTypes_ItemChecked;
+            _lvTypes.ItemSelectionChanged += LvTypes_ItemSelectionChanged;
 
             _leftSplit.Panel2.Controls.Add(_lvTypes);
             _mainSplit.Panel1.Controls.Add(_leftSplit);
 
-            // ===== RIGHT: toolbar + preview =====
-            _toolbar = new TableLayoutPanel
+            // ===== MIDDLE: source folder + what the scan found =====
+            _rightSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                FixedPanel = FixedPanel.Panel1
+            };
+
+            var sourceToolbar = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 3,
-                RowCount = 4,
-                Padding = new Padding(5, 5, 5, 5)
+                RowCount = 2,
+                Padding = new Padding(5, 5, 5, 3)
             };
-            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            sourceToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            sourceToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            sourceToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var lblFolder = new Label
             {
@@ -274,7 +324,12 @@ namespace PluginStepCodegen
                 Anchor = AnchorStyles.Left | AnchorStyles.Right,
                 Margin = new Padding(0, 0, 6, 4)
             };
-            _txtFolder.TextChanged += (s, e) => UpdateButtonState();
+            _txtFolder.TextChanged += (s, e) =>
+            {
+                UpdateButtonState();
+                _scanSettled.Stop();
+                _scanSettled.Start();
+            };
             _btnBrowse = new Button
             {
                 Text = "Browse...",
@@ -285,9 +340,66 @@ namespace PluginStepCodegen
             };
             _btnBrowse.Click += BtnBrowse_Click;
 
-            _toolbar.Controls.Add(lblFolder, 0, 0);
-            _toolbar.Controls.Add(_txtFolder, 1, 0);
-            _toolbar.Controls.Add(_btnBrowse, 2, 0);
+            _lblScanStatus = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Height = 17,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0),
+                Text = "Choose the folder your plugin source is in."
+            };
+
+            sourceToolbar.Controls.Add(lblFolder, 0, 0);
+            sourceToolbar.Controls.Add(_txtFolder, 1, 0);
+            sourceToolbar.Controls.Add(_btnBrowse, 2, 0);
+            sourceToolbar.Controls.Add(_lblScanStatus, 0, 1);
+            sourceToolbar.SetColumnSpan(_lblScanStatus, 3);
+
+            _scanSettled = new Timer { Interval = 500 };
+            _scanSettled.Tick += (s, e) =>
+            {
+                _scanSettled.Stop();
+                StartScan();
+            };
+
+            // No checkboxes: nothing here is picked for an operation, it is the scan's ledger.
+            // Selection echoes into the class list and back so the two read as one thing.
+            _lvSource = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                MultiSelect = false,
+                HideSelection = false,
+                ShowItemToolTips = true,
+                Font = _listFont
+            };
+            _lvSource.Columns.Add("Local source");
+            _lvSource.Columns.Add("State");
+            ShareWidthBetweenColumns(_lvSource, 210, 0.66f, 0.34f);
+            _lvSource.ItemSelectionChanged += LvSource_ItemSelectionChanged;
+
+            _rightSplit.Panel1.Controls.Add(_lvSource);
+            _rightSplit.Panel1.Controls.Add(sourceToolbar);
+
+            // ===== RIGHT: the write toolbar, above both the source column and the preview =====
+            // Not inside the collapsible pane: Write to Files is the tool's primary action and
+            // has to survive the preview being put away. Only the code view collapses.
+            _toolbar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                RowCount = 3,
+                Padding = new Padding(5, 5, 5, 5)
+            };
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            _toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var lblOutput = new Label
             {
@@ -296,23 +408,60 @@ namespace PluginStepCodegen
                 Anchor = AnchorStyles.Left,
                 Margin = new Padding(0, 0, 6, 4)
             };
+            // The scan's staleness marks are about the mode that is selected, so a mode switch
+            // re-renders them along with everything UpdateButtonState already covered.
             _rbAttributes = new RadioButton { Text = "Xrm Tools attributes", AutoSize = true, Checked = true, Margin = new Padding(0, 0, 16, 0) };
-            _rbAttributes.CheckedChanged += (s, e) => UpdateButtonState();
+            _rbAttributes.CheckedChanged += (s, e) => RenderScan();
             _rbComment = new RadioButton { Text = "Readable summary comment", AutoSize = true, Margin = new Padding(0) };
+
+            // Puts the code view away and hands its width to the source column, for the sessions
+            // that are about auditing the marks rather than reading what would be written. At the
+            // toolbar's right edge, against the pane it toggles.
+            _btnPreviewToggle = new Button
+            {
+                Text = "Preview ▸",
+                Width = 78,
+                Height = 24,
+                Anchor = AnchorStyles.Right,
+                Margin = new Padding(12, 0, 0, 4)
+            };
+            _btnPreviewToggle.Click += (s, e) =>
+            {
+                var hide = !_rightSplit.Panel2Collapsed;
+                _rightSplit.Panel2Collapsed = hide;
+                _btnPreviewToggle.Text = hide ? "◂ Preview" : "Preview ▸";
+            };
 
             var modeRow = Row(_rbAttributes, _rbComment);
             modeRow.Margin = new Padding(0, 0, 0, 4);
-            _toolbar.Controls.Add(lblOutput, 0, 1);
-            _toolbar.Controls.Add(modeRow, 1, 1);
-            _toolbar.SetColumnSpan(modeRow, 2);
+            _toolbar.Controls.Add(lblOutput, 0, 0);
+            _toolbar.Controls.Add(modeRow, 1, 0);
+            _toolbar.Controls.Add(_btnPreviewToggle, 2, 0);
 
             _btnWrite = new Button { Text = "Write to Files", Width = 110, Height = 26, Enabled = false, Margin = new Padding(0, 0, 6, 0) };
             _btnWrite.Click += BtnWrite_Click;
             _btnCreateDefinitions = new Button { Text = "Create Attribute Definitions File", Width = 210, Height = 26, Enabled = false, Margin = new Padding(0) };
             _btnCreateDefinitions.Click += BtnCreateDefinitions_Click;
 
-            var buttonRow = Row(_btnWrite, _btnCreateDefinitions);
-            _toolbar.Controls.Add(buttonRow, 0, 2);
+            // Only shows itself when the scan has found an ambiguity, because "both" is not a
+            // choice anybody should be offered while there is nothing it would apply to. Writing
+            // to every declaring file is safe for the partial-class case the ambiguity usually is:
+            // the splice replaces this tool's own attributes and touches nothing else.
+            _chkWriteAmbiguous = new CheckBox
+            {
+                Text = "Write to both files when ambiguous",
+                AutoSize = true,
+                Visible = false,
+                // The ambiguity's own amber, so the checkbox reads as belonging to the ⚠ rows -
+                // darkened a step, because the lists' amber sits on white and this sits on the
+                // toolbar's grey, where the same value falls just short of a 4.5:1 contrast.
+                ForeColor = Color.FromArgb(138, 92, 0),
+                Margin = new Padding(12, 5, 0, 0)
+            };
+            _chkWriteAmbiguous.CheckedChanged += (s, e) => UpdateButtonState();
+
+            var buttonRow = Row(_btnWrite, _btnCreateDefinitions, _chkWriteAmbiguous);
+            _toolbar.Controls.Add(buttonRow, 0, 1);
             _toolbar.SetColumnSpan(buttonRow, 3);
 
             // A disabled button gives no reason, and the only status line the tool had is in the
@@ -327,7 +476,7 @@ namespace PluginStepCodegen
                 ForeColor = SystemColors.GrayText,
                 Margin = new Padding(0, 3, 0, 0)
             };
-            _toolbar.Controls.Add(_lblWriteHint, 0, 3);
+            _toolbar.Controls.Add(_lblWriteHint, 0, 2);
             _toolbar.SetColumnSpan(_lblWriteHint, 3);
 
             _txtPreview = new RichTextBox
@@ -343,11 +492,28 @@ namespace PluginStepCodegen
                 Font = _codeFont
             };
 
-            _mainSplit.Panel2.Controls.Add(_txtPreview);
+            _rightSplit.Panel2.Controls.Add(_txtPreview);
+            _mainSplit.Panel2.Controls.Add(_rightSplit);
             _mainSplit.Panel2.Controls.Add(_toolbar);
+
+            EnableDoubleBuffer(_lvAssemblies);
+            EnableDoubleBuffer(_lvTypes);
+            EnableDoubleBuffer(_lvSource);
 
             Controls.Add(_mainSplit);
             ResumeLayout(false);
+        }
+
+        /// <summary>
+        /// A grouped ListView repainted straight to the screen drops rows after a large resize -
+        /// which is exactly what collapsing the output pane is. Double buffering is the standard
+        /// cure, and the property is non-public for no reason anybody remembers.
+        /// </summary>
+        private static void EnableDoubleBuffer(ListView list)
+        {
+            typeof(ListView)
+                .GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(list, true, null);
         }
 
         /// <summary>
@@ -382,6 +548,10 @@ namespace PluginStepCodegen
             {
                 if (_checkSettled != null) _checkSettled.Dispose();
                 if (_previewSettled != null) _previewSettled.Dispose();
+                if (_scanSettled != null) _scanSettled.Dispose();
+                // A scan in flight checks the generation on arrival; bumping it here is what
+                // turns "the control is going away" into "that result is nobody's".
+                _scanGeneration++;
             }
 
             base.Dispose(disposing);
@@ -417,17 +587,20 @@ namespace PluginStepCodegen
         /// </summary>
         private void LaySplitters()
         {
-            // 400 is what the load row measures: the button, both switches with their counts
+            // 420 is what the load row measures: both buttons, both switches with their counts
             // spelled out, and the margins between them. A share of the window was the rule before
             // there were two switches, and it put the second one on a line of its own on any window
-            // narrower than about 1250. The pane has nothing to do with the extra width anyway -
-            // assembly and class names are short, and the preview is what wants the rest. Below the
-            // floor the switches wrap rather than being clipped.
+            // narrower than about 1250. Below the floor the row wraps rather than being clipped.
+            // The right side's minimum has to cover the other two panes at their own minimums, or
+            // the inner splitter is never laid at all.
             _splittersLaid =
-                LaySplit(_mainSplit, 270, 340, 400) &
+                LaySplit(_mainSplit, 250, 526, 420) &
                 // Panel1 carries the toolbar as well as the list, so its minimum is that much
                 // taller than the class list's below it.
-                LaySplit(_leftSplit, 170, 90, (int)(_leftSplit.Height * 0.5));
+                LaySplit(_leftSplit, 170, 90, (int)(_leftSplit.Height * 0.5)) &
+                // The source column earns a fixed share and the preview takes everything else:
+                // paths are short, generated code is wide.
+                LaySplit(_rightSplit, 220, 302, 340);
         }
 
         private static bool LaySplit(SplitContainer split, int min1, int min2, int distance)
@@ -494,8 +667,44 @@ namespace PluginStepCodegen
                     _typesByAssembly.Clear();
                     _checkedAssemblies.Clear();
                     _excludedTypes.Clear();
+                    _btnRefresh.Enabled = true;
                     RenderAssemblies();
                     RenderTypes();
+                }
+            });
+        }
+
+        private void BtnRefresh_Click(object sender, EventArgs e)
+        {
+            ExecuteMethod(RefreshRegistrations);
+        }
+
+        /// <summary>
+        /// The same fetches as a load, minus the forgetting: ticked assemblies, excluded classes,
+        /// the filter and the folder all stand, and only what the environment says is reread. Ids
+        /// are stable across a plugin re-registration from the IDE, which is the loop this exists
+        /// for; an assembly that genuinely went away drops out of the ticked set silently.
+        /// </summary>
+        private void RefreshRegistrations()
+        {
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Refreshing plugin assemblies...",
+                Work = (worker, args) => { args.Result = RegistrationQuery.GetAssemblies(Service); },
+                PostWorkCallBack = result =>
+                {
+                    if (result.Error != null)
+                    {
+                        ShowErrorDialog(result.Error);
+                        return;
+                    }
+
+                    _assemblies = (List<AssemblyInfo>)result.Result;
+                    var alive = new HashSet<Guid>(_assemblies.Select(a => a.Id));
+                    _checkedAssemblies.RemoveWhere(id => !alive.Contains(id));
+                    _typesByAssembly.Clear();
+                    RenderAssemblies();
+                    LoadCheckedTypes();
                 }
             });
         }
@@ -544,11 +753,15 @@ namespace PluginStepCodegen
                 var item = new ListViewItem(assembly.Name)
                 {
                     Tag = assembly,
-                    Checked = _checkedAssemblies.Contains(assembly.Id)
+                    Checked = _checkedAssemblies.Contains(assembly.Id),
+                    UseItemStyleForSubItems = false
                 };
                 item.SubItems.Add(assembly.IsolationMode == 2 ? "Sandbox" : "None");
+                item.SubItems.Add(string.Empty);
                 _lvAssemblies.Items.Add(item);
             }
+
+            AnnotateAssemblies();
 
             _lvAssemblies.EndUpdate();
             _rendering = false;
@@ -683,9 +896,12 @@ namespace PluginStepCodegen
                     {
                         Tag = type,
                         Checked = !_excludedTypes.Contains(type.Id),
-                        ToolTipText = type.TypeName
+                        ToolTipText = type.TypeName,
+                        // The source glyph carries its own colour without taking the row with it.
+                        UseItemStyleForSubItems = false
                     };
                     item.SubItems.Add(type.Steps.Count.ToString());
+                    item.SubItems.Add(string.Empty);
                     _lvTypes.Items.Add(item);
                 }
             }
@@ -694,6 +910,7 @@ namespace PluginStepCodegen
             _rendering = false;
 
             UpdateButtonState();
+            StartScan();
         }
 
         private void LvTypes_ItemChecked(object sender, ItemCheckedEventArgs e)
@@ -731,10 +948,10 @@ namespace PluginStepCodegen
             // to go quiet for a reason nothing gives.
             _txtFolder.ForeColor = folder.Length > 0 && !hasFolder ? Color.Firebrick : SystemColors.WindowText;
             _lblWriteHint.Text =
-                folder.Length == 0 ? "Choose the folder your plugin source is in." :
+                folder.Length == 0 ? "Pick a source folder first." :
                 !hasFolder ? "No folder at that path." :
                 !hasChecked ? "Tick the classes to document." :
-                string.Empty;
+                WritePlan();
 
             UpdateStatus();
 
@@ -851,10 +1068,466 @@ namespace PluginStepCodegen
             CsSyntaxHighlighter.Apply(_txtPreview, sb.ToString());
         }
 
+        private const string GlyphFound = "✓";      // ✓
+        private const string GlyphStale = "✎";      // ✎
+        private const string GlyphMissing = "✗";    // ✗
+        private const string GlyphAmbiguous = "⚠";  // ⚠
+
+        /// <summary>
+        /// Holds the folder against the loaded registrations, off the UI thread: the read is
+        /// however big somebody's src tree is. Anything that changes either side calls this;
+        /// a result that arrives after the next scan started is dropped.
+        /// </summary>
+        private void StartScan()
+        {
+            var generation = ++_scanGeneration;
+            var folder = _txtFolder.Text.Trim();
+
+            if (folder.Length == 0 || !Directory.Exists(folder) || _typesByAssembly.Count == 0)
+            {
+                _scan = null;
+                RenderScan();
+                return;
+            }
+
+            var listed = _lvTypes.Items.Cast<ListViewItem>()
+                .Select(i => (PluginTypeInfo)i.Tag)
+                .ToList();
+
+            // "Not registered" is judged against everything fetched, not just what is ticked,
+            // so unticking an assembly does not turn its classes into findings.
+            var registeredNames = new HashSet<string>(
+                _typesByAssembly.Values.SelectMany(t => t).Select(t => t.ClassName));
+
+            _lblScanStatus.Text = "Scanning...";
+            Task.Run(() => SourceScanner.Scan(folder, listed, registeredNames)).ContinueWith(t =>
+            {
+                if (IsDisposed || !IsHandleCreated)
+                {
+                    return;
+                }
+
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        if (generation != _scanGeneration || IsDisposed)
+                        {
+                            return;
+                        }
+
+                        _scan = t.IsFaulted ? null : t.Result;
+                        RenderScan();
+                        if (t.IsFaulted)
+                        {
+                            _lblScanStatus.Text = "Scan failed: " + t.Exception.GetBaseException().Message;
+                        }
+                    }));
+                }
+                catch (InvalidOperationException)
+                {
+                    // The handle went away between the check and the call: nobody to tell.
+                }
+            });
+        }
+
+        /// <summary>
+        /// Draws the one scan everywhere it shows: glyphs on the class rows, roll-ups on the
+        /// assembly rows, the ledger in the middle column, and the two status lines. Also run
+        /// without a new scan when the mode switches, because staleness is a question about
+        /// the output that is selected.
+        /// </summary>
+        private void RenderScan()
+        {
+            var scan = _scan;
+
+            _lvTypes.BeginUpdate();
+            foreach (ListViewItem item in _lvTypes.Items)
+            {
+                var type = (PluginTypeInfo)item.Tag;
+                ClassMatch match;
+                string glyph = string.Empty, words = string.Empty, detail = null;
+                var color = SystemColors.GrayText;
+
+                if (scan != null && scan.Matches.TryGetValue(type.Id, out match))
+                {
+                    Describe(type, match, out glyph, out words, out detail, out color);
+                }
+
+                var cell = item.SubItems[2];
+                cell.Text = glyph.Length == 0 ? string.Empty : glyph + " " + words;
+                cell.ForeColor = color;
+                item.ToolTipText = detail == null ? type.TypeName : type.TypeName + "\r\n" + detail;
+            }
+
+            _lvTypes.EndUpdate();
+
+            AnnotateAssemblies();
+            RenderSourceList();
+
+            var ambiguities = scan == null
+                ? 0
+                : _lvTypes.Items.Cast<ListViewItem>()
+                    .Select(i => (PluginTypeInfo)i.Tag)
+                    .Count(t => scan.Matches.ContainsKey(t.Id) && scan.Matches[t.Id].Kind == MatchKind.Ambiguous);
+            _chkWriteAmbiguous.Visible = ambiguities > 0;
+
+            _lblScanStatus.Text = ScanSummary();
+            UpdateButtonState();
+        }
+
+        /// <summary>One class's verdict, in every voice that reports it.</summary>
+        private void Describe(PluginTypeInfo type, ClassMatch match, out string glyph, out string words, out string detail, out Color color)
+        {
+            switch (match.Kind)
+            {
+                case MatchKind.NotFound:
+                    glyph = GlyphMissing;
+                    words = "no file";
+                    detail = "No .cs file under the source folder declares this class.";
+                    color = GlyphRed;
+                    return;
+
+                case MatchKind.Ambiguous:
+                    glyph = GlyphAmbiguous;
+                    words = match.Candidates.Count + " files";
+                    detail = match.Candidates.Count + " files declare this class:\r\n"
+                             + string.Join("\r\n", match.Candidates.Select(f => "  " + Relative(_scan.Folder, f)));
+                    color = GlyphAmber;
+                    return;
+
+                default:
+                    var state = CodeFileWriter.StateOf(match.Code, type.ClassName, Remarks(type), Attributes(type));
+                    var file = Relative(_scan.Folder, match.File);
+                    if (state == CodeFileWriter.WriteState.Stale)
+                    {
+                        glyph = GlyphStale;
+                        words = "stale";
+                        detail = file + "\r\nHas this tool's output, but it no longer matches the registration.";
+                        color = GlyphAmber;
+                    }
+                    else
+                    {
+                        glyph = GlyphFound;
+                        words = state == CodeFileWriter.WriteState.Current ? "current" : "found";
+                        detail = file + (state == CodeFileWriter.WriteState.Current
+                            ? "\r\nAlready says exactly what the registration says."
+                            : "\r\nNothing written yet.");
+                        color = GlyphGreen;
+                    }
+
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// The per-assembly roll-up: how many of its classes have a file, and the worst thing
+        /// the scan found among them, so a bad assembly reads before its group is opened.
+        /// </summary>
+        private void AnnotateAssemblies()
+        {
+            var scan = _scan;
+            foreach (ListViewItem item in _lvAssemblies.Items)
+            {
+                var assembly = (AssemblyInfo)item.Tag;
+                var cell = item.SubItems[2];
+
+                List<PluginTypeInfo> types;
+                if (scan == null || !_typesByAssembly.TryGetValue(assembly.Id, out types))
+                {
+                    cell.Text = string.Empty;
+                    continue;
+                }
+
+                if (types.Count == 0)
+                {
+                    cell.Text = "—";
+                    cell.ForeColor = SystemColors.GrayText;
+                    continue;
+                }
+
+                int found = 0, missing = 0, ambiguous = 0;
+                foreach (var type in types)
+                {
+                    ClassMatch match;
+                    if (!scan.Matches.TryGetValue(type.Id, out match))
+                    {
+                        continue;
+                    }
+
+                    if (match.Kind == MatchKind.Found) found++;
+                    else if (match.Kind == MatchKind.Ambiguous) ambiguous++;
+                    else missing++;
+                }
+
+                var glyph = missing > 0 ? GlyphMissing : ambiguous > 0 ? GlyphAmbiguous : GlyphFound;
+                cell.Text = found + "/" + types.Count + " " + glyph;
+                cell.ForeColor = missing > 0 ? GlyphRed : ambiguous > 0 ? GlyphAmber : GlyphGreen;
+            }
+        }
+
+        /// <summary>
+        /// The middle column's ledger: every verdict as a row, in the class list's order, with
+        /// the folder's own surprises - plugin classes nothing registers - at the bottom.
+        /// </summary>
+        private void RenderSourceList()
+        {
+            var scan = _scan;
+
+            _lvSource.BeginUpdate();
+            _lvSource.Items.Clear();
+            _lvSource.Groups.Clear();
+
+            if (scan != null)
+            {
+                var listed = _lvTypes.Items.Cast<ListViewItem>().Select(i => (PluginTypeInfo)i.Tag).ToList();
+                var verdicts = listed
+                    .Where(t => scan.Matches.ContainsKey(t.Id))
+                    .Select(t => new { Type = t, Match = scan.Matches[t.Id] })
+                    .ToList();
+
+                var matched = verdicts.Where(v => v.Match.Kind == MatchKind.Found).ToList();
+                var missing = verdicts.Where(v => v.Match.Kind == MatchKind.NotFound).ToList();
+                var ambiguous = verdicts.Where(v => v.Match.Kind == MatchKind.Ambiguous).ToList();
+
+                var groupMatched = new ListViewGroup("Matched (" + matched.Count + ")");
+                var groupMissing = new ListViewGroup("Not found (" + missing.Count + ")");
+                var groupAmbiguous = new ListViewGroup("Ambiguous (" + ambiguous.Count + ")");
+                var groupUnregistered = new ListViewGroup("In folder, not registered (" + scan.Unregistered.Count + ")");
+                _lvSource.Groups.AddRange(new[] { groupMatched, groupMissing, groupAmbiguous, groupUnregistered });
+
+                foreach (var v in matched)
+                {
+                    string glyph, words, detail;
+                    Color color;
+                    Describe(v.Type, v.Match, out glyph, out words, out detail, out color);
+
+                    var item = new ListViewItem(Relative(scan.Folder, v.Match.File), groupMatched)
+                    {
+                        Tag = v.Type.Id,
+                        ToolTipText = v.Type.TypeName + "\r\n" + detail,
+                        UseItemStyleForSubItems = false
+                    };
+                    item.SubItems.Add(words).ForeColor = color;
+                    _lvSource.Items.Add(item);
+                }
+
+                foreach (var v in missing)
+                {
+                    var item = new ListViewItem(v.Type.ClassName, groupMissing)
+                    {
+                        Tag = v.Type.Id,
+                        ForeColor = GlyphRed,
+                        ToolTipText = v.Type.TypeName + "\r\nNo .cs file under the source folder declares this class.",
+                        UseItemStyleForSubItems = false
+                    };
+                    item.SubItems.Add("no file").ForeColor = GlyphRed;
+                    _lvSource.Items.Add(item);
+                }
+
+                foreach (var v in ambiguous)
+                {
+                    var item = new ListViewItem(v.Type.ClassName, groupAmbiguous)
+                    {
+                        Tag = v.Type.Id,
+                        ForeColor = GlyphAmber,
+                        ToolTipText = v.Type.TypeName,
+                        UseItemStyleForSubItems = false
+                    };
+                    item.SubItems.Add(v.Match.Candidates.Count + " files").ForeColor = GlyphAmber;
+                    _lvSource.Items.Add(item);
+
+                    foreach (var candidate in v.Match.Candidates)
+                    {
+                        var row = new ListViewItem("    " + Relative(scan.Folder, candidate), groupAmbiguous)
+                        {
+                            Tag = v.Type.Id,
+                            ForeColor = SystemColors.GrayText,
+                            ToolTipText = candidate,
+                            UseItemStyleForSubItems = false
+                        };
+                        row.SubItems.Add(string.Empty);
+                        _lvSource.Items.Add(row);
+                    }
+                }
+
+                foreach (var local in scan.Unregistered)
+                {
+                    var item = new ListViewItem(Relative(scan.Folder, local.File), groupUnregistered)
+                    {
+                        ForeColor = SystemColors.GrayText,
+                        ToolTipText = local.ClassName + "\r\nImplements IPlugin, directly or through a base, "
+                                      + "but nothing among the fetched assemblies registers it.",
+                        UseItemStyleForSubItems = false
+                    };
+                    item.SubItems.Add(local.ClassName).ForeColor = SystemColors.GrayText;
+                    _lvSource.Items.Add(item);
+                }
+            }
+
+            _lvSource.EndUpdate();
+        }
+
+        /// <summary>The middle column's status line, or the reason there is nothing to say.</summary>
+        private string ScanSummary()
+        {
+            var scan = _scan;
+            if (scan == null)
+            {
+                var folder = _txtFolder.Text.Trim();
+                return folder.Length == 0 ? "Choose the folder your plugin source is in." :
+                    !Directory.Exists(folder) ? "No folder at that path." :
+                    _typesByAssembly.Count == 0 ? "Load the assemblies to match against." :
+                    string.Empty;
+            }
+
+            int matched = 0, stale = 0, missing = 0, ambiguous = 0;
+            foreach (ListViewItem item in _lvTypes.Items)
+            {
+                var type = (PluginTypeInfo)item.Tag;
+                ClassMatch match;
+                if (!scan.Matches.TryGetValue(type.Id, out match))
+                {
+                    continue;
+                }
+
+                switch (match.Kind)
+                {
+                    case MatchKind.Found:
+                        matched++;
+                        if (CodeFileWriter.StateOf(match.Code, type.ClassName, Remarks(type), Attributes(type))
+                            == CodeFileWriter.WriteState.Stale)
+                        {
+                            stale++;
+                        }
+
+                        break;
+                    case MatchKind.NotFound:
+                        missing++;
+                        break;
+                    default:
+                        ambiguous++;
+                        break;
+                }
+            }
+
+            var parts = new List<string> { matched + " matched" + (stale > 0 ? " (" + stale + " stale)" : string.Empty) };
+            if (missing > 0) parts.Add(missing + " not found");
+            if (ambiguous > 0) parts.Add(ambiguous + " ambiguous");
+            if (scan.Unregistered.Count > 0) parts.Add(scan.Unregistered.Count + " unregistered");
+            return string.Join(" · ", parts);
+        }
+
+        /// <summary>
+        /// What Write would do right now, for the hint line: the button answers with a number
+        /// rather than a click finding out.
+        /// </summary>
+        private string WritePlan()
+        {
+            var scan = _scan;
+            if (scan == null)
+            {
+                return string.Empty;
+            }
+
+            int writable = 0, missing = 0, ambiguous = 0;
+            foreach (ListViewItem item in _lvTypes.CheckedItems)
+            {
+                var type = (PluginTypeInfo)item.Tag;
+                ClassMatch match;
+                if (!scan.Matches.TryGetValue(type.Id, out match))
+                {
+                    continue;
+                }
+
+                if (match.Kind == MatchKind.Found) writable++;
+                else if (match.Kind == MatchKind.NotFound) missing++;
+                else ambiguous++;
+            }
+
+            var writeAmbiguous = _chkWriteAmbiguous.Visible && _chkWriteAmbiguous.Checked;
+            var total = writable + (writeAmbiguous ? ambiguous : 0);
+            var skipped = missing + (writeAmbiguous ? 0 : ambiguous);
+            if (total == 0 && skipped == 0)
+            {
+                return string.Empty;
+            }
+
+            var text = "Will write " + total + (total == 1 ? " class" : " classes");
+            if (skipped > 0)
+            {
+                var reasons = new List<string>();
+                if (missing > 0) reasons.Add(missing + " no file");
+                if (!writeAmbiguous && ambiguous > 0) reasons.Add(ambiguous + " ambiguous");
+                text += " · " + skipped + " skipped (" + string.Join(", ", reasons) + ")";
+            }
+
+            return text;
+        }
+
+        private void LvTypes_ItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e)
+        {
+            if (!e.IsSelected || _syncingSelection)
+            {
+                return;
+            }
+
+            var type = e.Item.Tag as PluginTypeInfo;
+            if (type != null)
+            {
+                EchoSelection(_lvSource, item => item.Tag is Guid && (Guid)item.Tag == type.Id);
+            }
+        }
+
+        private void LvSource_ItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e)
+        {
+            if (!e.IsSelected || _syncingSelection || !(e.Item.Tag is Guid))
+            {
+                return;
+            }
+
+            var id = (Guid)e.Item.Tag;
+            EchoSelection(_lvTypes, item => ((PluginTypeInfo)item.Tag).Id == id);
+        }
+
+        /// <summary>
+        /// The other list follows along, so a red row and the class it is about are never
+        /// found by reading two lists against each other.
+        /// </summary>
+        private void EchoSelection(ListView list, Func<ListViewItem, bool> matches)
+        {
+            _syncingSelection = true;
+            try
+            {
+                list.SelectedItems.Clear();
+                foreach (ListViewItem item in list.Items)
+                {
+                    if (matches(item))
+                    {
+                        item.Selected = true;
+                        item.EnsureVisible();
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                _syncingSelection = false;
+            }
+        }
+
+        private static string Relative(string folder, string path)
+        {
+            return path.StartsWith(folder, StringComparison.OrdinalIgnoreCase)
+                ? path.Substring(folder.Length).TrimStart('\\', '/')
+                : path;
+        }
+
         private void BtnWrite_Click(object sender, EventArgs e)
         {
             var folder = _txtFolder.Text.Trim();
             var types = CheckedTypes();
+            var writeAmbiguous = _chkWriteAmbiguous.Visible && _chkWriteAmbiguous.Checked;
 
             var written = new List<string>();
             var unchanged = new List<string>();
@@ -871,7 +1544,28 @@ namespace PluginStepCodegen
 
                     if (ambiguous != null)
                     {
-                        ambiguousTypes.Add(type.ClassName + " (" + ambiguous.Count + " files)");
+                        if (!writeAmbiguous)
+                        {
+                            ambiguousTypes.Add(type.ClassName + " (" + ambiguous.Count + " files)");
+                            continue;
+                        }
+
+                        // Asked for by name: every file declaring the class gets the same output.
+                        // The splice only ever replaces this tool's own block, so the partial-class
+                        // case this exists for ends up documented on both halves.
+                        foreach (var candidate in ambiguous)
+                        {
+                            var label = type.ClassName + " (" + Relative(folder, candidate) + ")";
+                            if (CodeFileWriter.Update(candidate, type.ClassName, Remarks(type), Attributes(type)))
+                            {
+                                written.Add(label);
+                            }
+                            else
+                            {
+                                unchanged.Add(label);
+                            }
+                        }
+
                         continue;
                     }
 
@@ -911,6 +1605,9 @@ namespace PluginStepCodegen
                 + Environment.NewLine + Environment.NewLine
                 + "A timestamped .bak copy was left beside every file that changed.",
                 "Write complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            // What was stale is now current, and the marks should say so without being asked.
+            StartScan();
         }
 
         private static void Report(StringBuilder sb, string heading, List<string> items)
