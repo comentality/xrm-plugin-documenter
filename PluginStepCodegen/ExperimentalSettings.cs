@@ -10,7 +10,7 @@ namespace PluginStepCodegen
     {
         /// <summary>
         /// Say a near-complete column list in the summary comment as its exceptions -
-        /// "(all columns except ...)" - instead of reciting seventy names. Comment mode
+        /// "(all columns except: ...)" - instead of reciting seventy names. Comment mode
         /// only; the attribute mode always writes the literal list it has to compile from.
         /// </summary>
         public bool AllColumnsExcept { get; set; }

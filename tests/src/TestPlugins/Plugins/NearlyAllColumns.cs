@@ -5,7 +5,7 @@ using XrmTools.Meta.Attributes;
 namespace TestPlugins
 {
     /// <summary>
-    /// The three shapes of a column list the experimental "(all columns except ...)"
+    /// The three shapes of a column list the experimental "(all columns except: ...)"
     /// rendering has to tell apart: a filter that is every updatable column of annotation
     /// but two, a filter that is every updatable column of task spelled out, and a filter
     /// carrying a name outside the universe it is measured against - createdon is real

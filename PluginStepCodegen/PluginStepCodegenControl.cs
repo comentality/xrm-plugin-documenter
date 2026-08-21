@@ -23,7 +23,7 @@ namespace PluginStepCodegen
 
         /// <summary>
         /// Each stepped entity's current columns, fetched alongside its steps and kept for the
-        /// session. What lets the comment say "(all columns except ...)" instead of reciting
+        /// session. What lets the comment say "(all columns except: ...)" instead of reciting
         /// seventy names. Entities the fetch could not answer for are simply absent, and the
         /// comment falls back to the plain list.
         /// </summary>
@@ -466,7 +466,7 @@ namespace PluginStepCodegen
                 Font = _daggerFont
             };
 
-            var miAllColumnsExcept = new ToolStripMenuItem("Say near-complete column lists as \"(all columns except ...)\"")
+            var miAllColumnsExcept = new ToolStripMenuItem("Say near-complete column lists as \"(all columns except: ...)\"")
             {
                 CheckOnClick = true,
                 Checked = _experimental.AllColumnsExcept,

@@ -166,7 +166,7 @@
                 @{ Id = '0d'; Name = 'TestPlugins.Rival' }
                 # Declared by src\Shared\Twin.cs, which Contoso.Crm.Plugins links as well.
                 @{ Id = '0e'; Name = 'Shared.Twin' }
-                # The three shapes of a column list the "(all columns except ...)"
+                # The three shapes of a column list the "(all columns except: ...)"
                 # experiment has to tell apart.
                 @{ Id = '0f'; Name = 'TestPlugins.NearlyAllColumns' }
             )

@@ -133,14 +133,14 @@ rather than a neutral default, and worth seeing in a diff.
 Messages that filter nothing — `Delete`, `Associate`, a custom action — keep their bare
 header, because there is no column list to have omitted.
 
-### `(all columns except ...)` — an experimental setting, off by default
+### `(all columns except: ...)` — an experimental setting, off by default
 
 Behind the † button in the write toolbar. Switched on, the tool measures each column list
 against its entity's current columns, and a list that covers nearly all of them is said as
 its exceptions:
 
 ```csharp
-///     PreImage: (all columns except creditlimit, ilac_legacyid, overriddencreatedon)
+///     PreImage: (all columns except: creditlimit, ilac_legacyid, overriddencreatedon)
 ```
 
 With seventy names in a seventy-five column table, the question a reader has is which five

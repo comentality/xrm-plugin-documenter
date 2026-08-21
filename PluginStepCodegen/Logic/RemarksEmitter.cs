@@ -15,7 +15,7 @@ namespace PluginStepCodegen.Logic
     /// and configuration are noise when you are skimming.
     ///
     /// Given the entities' current columns, a list that covers nearly all of them is said
-    /// as its exceptions - "(all columns except ...)" - because with seventy names the
+    /// as its exceptions - "(all columns except: ...)" - because with seventy names the
     /// question a reader has is which five are not there. Without the columns every list
     /// is rendered as written.
     /// </summary>
@@ -119,7 +119,7 @@ namespace PluginStepCodegen.Logic
         /// <summary>
         /// The list as written, unless the entity's own columns show it is nearly all of them -
         /// then the handful left out is the readable fact, and seventy names collapse to
-        /// "(all columns except ...)". A list that turns out to be every column is still not
+        /// "(all columns except: ...)". A list that turns out to be every column is still not
         /// called <see cref="AllColumns"/>: a registration with no list follows the table as it
         /// grows, a spelled-out one is pinned to today, and the difference is worth a word.
         /// </summary>
@@ -150,7 +150,7 @@ namespace PluginStepCodegen.Logic
             // "Except" has to mean a handful, or the phrase lies about the coverage; past a
             // quarter of what is included, the plain list says it straighter.
             return missing.Count * 4 <= present.Count
-                ? "(all columns except " + string.Join(", ", missing) + ")"
+                ? "(all columns except: " + string.Join(", ", missing) + ")"
                 : list;
         }
 

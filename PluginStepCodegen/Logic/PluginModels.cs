@@ -135,7 +135,7 @@ namespace PluginStepCodegen.Logic
 
     /// <summary>
     /// The columns an entity has right now, so a list that covers nearly all of them can be
-    /// said as "(all columns except ...)" instead of recited. Two views of the same
+    /// said as "(all columns except: ...)" instead of recited. Two views of the same
     /// attributes, because they diff against different pickers: an image can carry any real
     /// column, filtering attributes only the updatable ones, and diffing against the wrong
     /// universe would invent exceptions that were never offered.

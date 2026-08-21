@@ -451,7 +451,7 @@ limit is the line width.
 
 ### NearlyAllColumns
 
-The three shapes of a column list the experimental `(all columns except ...)` rendering
+The three shapes of a column list the experimental `(all columns except: ...)` rendering
 (behind the `†` button, off by default) has to tell apart — and the reason the fixture
 can say "nearly every column" at all: `register.ps1` reads the table's updatable columns
 off the live environment and writes the near-complete and complete lists from them
@@ -470,8 +470,8 @@ refuses one that does not exist, which this suite found out the empirical way.) 
 below is the live count of task's updatable columns (10 in the headless stand-in):
 
 ```csharp
-/// Sync Post-Update of annotation (order 1): (all columns except notetext, subject)
-///     PreImage: (all columns except documentbody)
+/// Sync Post-Update of annotation (order 1): (all columns except: notetext, subject)
+///     PreImage: (all columns except: documentbody)
 /// Sync Post-Update of task (order 2): (all N columns, written out)
 /// Sync Post-Update of contact (order 3): createdon, firstname, lastname
 ```

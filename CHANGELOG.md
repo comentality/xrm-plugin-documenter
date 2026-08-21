@@ -4,7 +4,7 @@
 
 - **A near-complete column list can be said as its exceptions.** Switched on, the comment
   mode measures each list against its entity's current columns, and an image or filter
-  that covers nearly all of them reads `(all columns except creditlimit, ilac_legacyid,
+  that covers nearly all of them reads `(all columns except: creditlimit, ilac_legacyid,
   ...)` instead of reciting seventy names — used only while the exceptions stay at most a
   quarter of what is included. A list that turns out to be every column reads `(all 75
   columns, written out)`, distinct from `(all columns)`, because a spelled-out list is

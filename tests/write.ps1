@@ -24,7 +24,7 @@
          assembly and cannot settle, and nothing is ambiguous: the short names Duplicate
          and Rival match two files each, and the registered namespace picks the right one.
 
-      C. The default list in comment mode with the experimental "(all columns except...)"
+      C. The default list in comment mode with the experimental "(all columns except: ...)"
          rendering on: the emitter is handed the stand-in column universes the tool would
          have fetched, and NearlyAllColumns collapses to its exceptions while every other
          list stays exactly as it reads in scenario A.
@@ -413,8 +413,8 @@ Check 'comment with columns again: all sixteen already up to date' `
 # The three shapes, one step each: near-complete says its exceptions, complete says it
 # is complete, and a name outside the universe - createdon is real but not updatable -
 # keeps its list verbatim, because the odd name out is the finding.
-Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except notetext, subject)'
-Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except documentbody)'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except: notetext, subject)'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except: documentbody)'
 Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all 10 columns, written out)'
 Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' 'createdon, firstname, lastname'
 
