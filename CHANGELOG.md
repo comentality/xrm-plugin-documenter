@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- **The tool behaves itself on a slow link.** XrmToolBox draws a small panel in the middle of
+  a tool while it waits on the environment — not a sheet over the whole tab — so every button
+  stayed live for however long the fetch took. On a fast connection that window is
+  milliseconds wide. On a slow one it is where most of a session is spent, and eight things
+  went wrong in it:
+
+  - **Closing the tab mid-fetch could take the tab down with it.** The answer still arrived,
+    and was handed to a control that no longer existed. Every fetch now checks before it
+    draws, the way the folder scan always has.
+  - **A late answer could overwrite a newer one — for good.** Press **Refresh** while a fetch
+    is still out and two answers to two different questions are in the air; whichever landed
+    last was believed, and because the assembly was then in the cache it was never asked
+    about again. Fetches now carry the question they belong to and are dropped if it has
+    moved on.
+  - **Ticking assemblies one at a time re-asked for the ones already on their way.** Five
+    ticks put the first assembly on the wire five times. There is now one question out at a
+    time, and whatever is ticked meanwhile goes out together when it lands — one round trip
+    for the batch instead of one per tick.
+  - **Load Assemblies and Write to Files are dead while their own work runs.** Pressing Load
+    again cost a second full query whose answer cleared everything ticked since the first;
+    pressing Write twice put two writers over the same files, where the backup name is only
+    accurate to the second, so the two `.bak` copies collided and the pristine original was
+    the copy that got lost.
+  - **Write waits for the environment.** It was offered while an assembly was still loading,
+    and would write a half-loaded list with a report that read like a complete one.
+  - **The status lines stop claiming what has not arrived.** `2 assemblies · 4 of 4 classes`
+    is a complete-sounding sentence about a list with an assembly missing from it, and every
+    class of that assembly was filed, in words, under **In folder, not registered** — then
+    quietly un-filed when the network caught up. The count now says what it is waiting on,
+    the assembly's own row shows `…`, and nothing is called unregistered until every
+    registration is in.
+
+    ![The status line and the assembly rows while a fetch is still out](assets/changelog-still-loading.png)
+
+    ![Write to Files, greyed, saying what it is waiting for](assets/changelog-write-waiting.png)
+
+  - **A fetch can be abandoned.** The progress panel now offers Cancel. A query already on
+    the wire cannot be recalled, but the three round trips behind it can be called off, which
+    is most of the wait on the link where it matters. Nothing is recorded, so unticking and
+    ticking again asks afresh.
+  - **A fetch that fails says so where you can still read it.** The dialog is dismissed and
+    then there is only the list, and an environment that could not be reached looked exactly
+    like an environment with nothing in it. The status line keeps the reason.
+
+  `tests\slow.ps1` is what found all of it: eight scenarios driving the real control against
+  a Dataverse that takes seconds to answer, with a screenshot per gesture.
+
 - **The source folder is read once, not once per class.** A project of 250 files with 33
   registered classes took four seconds to scan and six to write. Reading all 250 files takes
   twelve milliseconds, so none of that was ever the disk: every registered class was

@@ -44,6 +44,52 @@ namespace PluginStepCodegen
         /// <summary>Set while code, not the user, is ticking boxes.</summary>
         private bool _rendering;
 
+        /// <summary>
+        /// Bumped whenever what has been fetched stops being an answer to the question now being
+        /// asked - a load, or a refresh. A fetch carries the generation it was started in and is
+        /// dropped on arrival if that is no longer the current one.
+        ///
+        /// The scan has had this since it existed, because a folder read is obviously slow. The
+        /// environment is slow for the same reasons and more of them, and without it the older of
+        /// two answers in the air can land last and be believed - and then never be asked again,
+        /// because the id it wrote is in the cache and the cache is what "already fetched" means.
+        /// </summary>
+        private int _fetchGeneration;
+
+        /// <summary>
+        /// Assemblies whose steps have been asked for and not been answered for. Two jobs: it is
+        /// what makes a second tick wait for the first fetch rather than start another one that
+        /// asks for the same rows again, and it is how the panes know they are describing a list
+        /// that is not all there yet.
+        /// </summary>
+        private readonly HashSet<Guid> _typesInFlight = new HashSet<Guid>();
+
+        /// <summary>Set between pressing Load or Refresh and the assembly list arriving.</summary>
+        private bool _loadingAssemblies;
+
+        /// <summary>Set once the assembly list has been fetched at all, which is what Refresh needs.</summary>
+        private bool _loaded;
+
+        /// <summary>Set while a write is running on a worker.</summary>
+        private bool _writing;
+
+        /// <summary>
+        /// Why the last fetch did not answer, in the status line's own words. A dialog is read
+        /// once and dismissed; what is left behind has to say why the list is empty, or the tool
+        /// looks like it is telling you the environment has nothing in it.
+        /// </summary>
+        private string _fetchTrouble;
+
+        /// <summary>
+        /// Whether the environment still owes an answer. Everything that would act on the
+        /// registrations - Write, and the judgement that a class in the folder is registered by
+        /// nothing - has to wait for this to be false.
+        /// </summary>
+        private bool Outstanding
+        {
+            get { return _loadingAssemblies || _typesInFlight.Count > 0; }
+        }
+
         private bool _splittersLaid;
 
         /// <summary>Kept in fields because a control does not own the font it is handed.</summary>
@@ -733,16 +779,43 @@ namespace PluginStepCodegen
             ExecuteMethod(LoadAssemblies);
         }
 
+        /// <summary>
+        /// Starts a new question, and says so: whatever is on its way belongs to the old one and
+        /// its answer is nobody's when it lands. Returns the generation to check on arrival.
+        /// </summary>
+        private int StartFetch()
+        {
+            _typesInFlight.Clear();
+            _fetchTrouble = null;
+            return ++_fetchGeneration;
+        }
+
         private void LoadAssemblies()
         {
+            var generation = StartFetch();
+            _loadingAssemblies = true;
+            UpdateButtonState();
+
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Loading plugin assemblies...",
                 Work = (worker, args) => { args.Result = RegistrationQuery.GetAssemblies(Service); },
                 PostWorkCallBack = result =>
                 {
+                    // The tab may have been closed while this was in the air, and on a slow link
+                    // that is a window seconds wide rather than milliseconds. Rendering into a
+                    // disposed ListView reaches for a handle that is not there any more.
+                    if (IsDisposed || generation != _fetchGeneration)
+                    {
+                        return;
+                    }
+
+                    _loadingAssemblies = false;
+
                     if (result.Error != null)
                     {
+                        _fetchTrouble = "The assemblies could not be read: " + result.Error.Message;
+                        UpdateButtonState();
                         ShowErrorDialog(result.Error);
                         return;
                     }
@@ -752,7 +825,7 @@ namespace PluginStepCodegen
                     _columnsByEntity.Clear();
                     _checkedAssemblies.Clear();
                     _excludedTypes.Clear();
-                    _btnRefresh.Enabled = true;
+                    _loaded = true;
                     RenderAssemblies();
                     RenderTypes();
                 }
@@ -772,14 +845,30 @@ namespace PluginStepCodegen
         /// </summary>
         private void RefreshRegistrations()
         {
+            // Refresh is exactly "throw away what you have and ask again", so it supersedes a
+            // fetch that is still out rather than waiting behind it: the generation goes up here,
+            // and whatever was in the air lands on nobody.
+            var generation = StartFetch();
+            _loadingAssemblies = true;
+            UpdateButtonState();
+
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Refreshing plugin assemblies...",
                 Work = (worker, args) => { args.Result = RegistrationQuery.GetAssemblies(Service); },
                 PostWorkCallBack = result =>
                 {
+                    if (IsDisposed || generation != _fetchGeneration)
+                    {
+                        return;
+                    }
+
+                    _loadingAssemblies = false;
+
                     if (result.Error != null)
                     {
+                        _fetchTrouble = "The assemblies could not be read: " + result.Error.Message;
+                        UpdateButtonState();
                         ShowErrorDialog(result.Error);
                         return;
                     }
@@ -875,6 +964,11 @@ namespace PluginStepCodegen
                 _checkedAssemblies.Remove(assembly.Id);
             }
 
+            // Whatever went wrong last was about a different set of ticks. Ticking is the
+            // gesture that means "moving on", and a failure that outlived it would sit on the
+            // status line in place of the counts for the rest of the session.
+            _fetchTrouble = null;
+
             // The counts stay a beat behind until the types arrive; the tally of assemblies
             // does not have to.
             UpdateStatus();
@@ -911,14 +1005,34 @@ namespace PluginStepCodegen
         /// <summary>
         /// Fetches the types of every checked assembly not fetched already, in one round trip,
         /// then puts the list back together.
+        ///
+        /// One question at a time. A box ticked while a fetch is out does not start a second one:
+        /// what is already on the wire is invisible to the arithmetic below, so a second fetch
+        /// would ask for those rows again - and ticking five assemblies one at a time on the link
+        /// where that hurts would put the first one on the wire five times. Whatever accumulates
+        /// meanwhile is picked up when the answer lands, which also makes it one round trip for
+        /// the batch instead of one per tick.
         /// </summary>
         private void LoadCheckedTypes()
         {
+            if (_typesInFlight.Count > 0)
+            {
+                RenderTypes();
+                return;
+            }
+
             var missing = _checkedAssemblies.Where(id => !_typesByAssembly.ContainsKey(id)).ToList();
             if (missing.Count == 0)
             {
                 RenderTypes();
                 return;
+            }
+
+            var generation = _fetchGeneration;
+            _fetchTrouble = null;
+            foreach (var id in missing)
+            {
+                _typesInFlight.Add(id);
             }
 
             // Snapshotted here because the worker must not read a dictionary the UI thread owns.
@@ -929,9 +1043,18 @@ namespace PluginStepCodegen
                 Message = missing.Count == 1
                     ? "Loading registered steps..."
                     : "Loading registered steps from " + missing.Count + " assemblies...",
+                // A query on the wire cannot be recalled, but the three round trips behind it can
+                // be called off, and on a slow link those are most of the wait. Without this the
+                // only way out of a fetch was closing the tab.
+                IsCancelable = true,
                 Work = (worker, args) =>
                 {
-                    var types = RegistrationQuery.GetPluginTypes(Service, missing);
+                    var types = RegistrationQuery.GetPluginTypes(Service, missing, () => worker.CancellationPending);
+                    if (worker.CancellationPending)
+                    {
+                        args.Cancel = true;
+                        return;
+                    }
 
                     var entities = types
                         .SelectMany(t => t.Steps)
@@ -946,22 +1069,55 @@ namespace PluginStepCodegen
                     // Nothing is recorded on a miss, so the next load simply asks again.
                     // Fetched even while the experimental switch is off - one light request buys the
                     // toggle working instantly on whatever is already loaded.
-                    Dictionary<string, EntityColumnsInfo> columns;
-                    try
+                    // It is also the last round trip of the four, so somebody who has given up
+                    // by now should not pay for it.
+                    var columns = new Dictionary<string, EntityColumnsInfo>();
+                    if (!worker.CancellationPending)
                     {
-                        columns = RegistrationQuery.GetEntityColumns(Service, entities);
+                        try
+                        {
+                            columns = RegistrationQuery.GetEntityColumns(Service, entities);
+                        }
+                        catch
+                        {
+                            columns = new Dictionary<string, EntityColumnsInfo>();
+                        }
                     }
-                    catch
+
+                    if (worker.CancellationPending)
                     {
-                        columns = new Dictionary<string, EntityColumnsInfo>();
+                        args.Cancel = true;
+                        return;
                     }
 
                     args.Result = new KeyValuePair<List<PluginTypeInfo>, Dictionary<string, EntityColumnsInfo>>(types, columns);
                 },
                 PostWorkCallBack = result =>
                 {
+                    if (IsDisposed || generation != _fetchGeneration)
+                    {
+                        return;
+                    }
+
+                    foreach (var id in missing)
+                    {
+                        _typesInFlight.Remove(id);
+                    }
+
+                    // Neither of these records anything, so the assembly is exactly as unasked as
+                    // it was: unticking and reticking asks again, which is the only way back from
+                    // either of them.
+                    if (result.Cancelled)
+                    {
+                        _fetchTrouble = "Cancelled. Untick and tick again to ask once more.";
+                        RenderTypes();
+                        return;
+                    }
+
                     if (result.Error != null)
                     {
+                        _fetchTrouble = "The registered steps could not be read: " + result.Error.Message;
+                        RenderTypes();
                         ShowErrorDialog(result.Error);
                         return;
                     }
@@ -981,9 +1137,15 @@ namespace PluginStepCodegen
                         _typesByAssembly[id] = loaded[id].ToList();
                     }
 
-                    RenderTypes();
+                    // And whatever was ticked while this was on its way. Ends in RenderTypes
+                    // either way: with nothing left to ask for, that is all this does.
+                    LoadCheckedTypes();
                 }
             });
+
+            // The panes are now describing a list with an assembly missing from it, and have to
+            // say so before the answer rather than after.
+            RenderScan();
         }
 
         /// <summary>
@@ -1064,15 +1226,29 @@ namespace PluginStepCodegen
             var folder = _txtFolder.Text.Trim();
             var hasFolder = folder.Length > 0 && Directory.Exists(folder);
 
-            _btnWrite.Enabled = hasChecked && hasFolder;
+            // Nothing is disabled while a WorkAsync runs: the panel XrmToolBox draws over the tool
+            // is a small one in the middle, not a sheet over the whole tab, so every button below
+            // is still live for however long the environment takes. On a fast link that hardly
+            // matters. On a slow one, pressing Load again because the first press did not seem to
+            // do anything costs a second full query whose answer clears everything ticked since
+            // the first, and pressing Write twice puts two writers over the same files - where the
+            // backup name is only accurate to the second, so the two collide and the pristine
+            // original is the copy that is lost.
+            _btnLoadAssemblies.Enabled = !_loadingAssemblies;
+            _btnRefresh.Enabled = _loaded && !_loadingAssemblies;
+            _btnWrite.Enabled = hasChecked && hasFolder && !_writing && !Outstanding;
             // A comment needs no attribute definitions to compile against.
-            _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked;
+            _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked && !_writing;
 
             // A path is typed or pasted a character at a time and one wrong letter reads the same
             // as a right one, so the field says whether it landed rather than leaving the buttons
             // to go quiet for a reason nothing gives.
             _txtFolder.ForeColor = folder.Length > 0 && !hasFolder ? Color.Firebrick : SystemColors.WindowText;
             _lblWriteHint.Text =
+                _writing ? "Writing..." :
+                _loadingAssemblies ? "Waiting on the assembly list." :
+                _typesInFlight.Count > 0 ? "Waiting on " + _typesInFlight.Count
+                                           + (_typesInFlight.Count == 1 ? " assembly" : " assemblies") + " still loading." :
                 folder.Length == 0 ? "Pick a source folder first." :
                 !hasFolder ? "No folder at that path." :
                 !hasChecked ? "Tick the classes to document." :
@@ -1101,6 +1277,21 @@ namespace PluginStepCodegen
                 shown > 0 && shownAndChecked == shown ? CheckState.Checked :
                 shownAndChecked == 0 ? CheckState.Unchecked : CheckState.Indeterminate;
 
+            // A dialog is read once and dismissed. What is left on screen afterwards has to say
+            // why the list is short, or an environment that could not be reached reads exactly
+            // like an environment with nothing in it.
+            if (_fetchTrouble != null)
+            {
+                _lblStatus.Text = _fetchTrouble;
+                return;
+            }
+
+            if (_loadingAssemblies)
+            {
+                _lblStatus.Text = "Loading the assemblies...";
+                return;
+            }
+
             if (chosen == 0)
             {
                 _lblStatus.Text =
@@ -1118,8 +1309,12 @@ namespace PluginStepCodegen
 
             var hidden = chosen - shownAndChecked;
 
+            // The count of classes is a count of what has arrived, and says so while any of it is
+            // still on its way: "3 assemblies · 5 of 5 classes" is a complete-sounding sentence
+            // about a list with two assemblies missing from it.
             _lblStatus.Text = chosen + " assemblies · "
                 + _lvTypes.CheckedItems.Count + " of " + _lvTypes.Items.Count + " classes"
+                + (_typesInFlight.Count == 0 ? string.Empty : " · " + _typesInFlight.Count + " still loading")
                 + (hidden == 0 ? string.Empty : " · " + hidden + " out of view")
                 + (empty == 0 ? string.Empty : " · " + empty + " with no steps");
         }
@@ -1416,6 +1611,13 @@ namespace PluginStepCodegen
                 var assembly = (AssemblyInfo)item.Tag;
                 var cell = item.SubItems[2];
 
+                if (_typesInFlight.Contains(assembly.Id))
+                {
+                    cell.Text = "…";
+                    cell.ForeColor = SystemColors.GrayText;
+                    continue;
+                }
+
                 List<PluginTypeInfo> types;
                 if (scan == null || !_typesByAssembly.TryGetValue(assembly.Id, out types))
                 {
@@ -1474,10 +1676,22 @@ namespace PluginStepCodegen
                 var missing = verdicts.Where(v => v.Match.Kind == MatchKind.NotFound).ToList();
                 var ambiguous = verdicts.Where(v => v.Match.Kind == MatchKind.Ambiguous).ToList();
 
+                // "Nothing registers this class" is a claim about every registration there is, and
+                // while one is still on the wire there is no answer to give. It is a stated
+                // finding rather than a blank cell, and would name half the folder for as long as
+                // somebody was waiting - then take it all back.
+                //
+                // An empty group draws nothing at all, so the heading below is never the thing
+                // that says why; the scan's status line is, and says "still loading" for exactly
+                // as long as the rows are held back.
+                var waiting = Outstanding;
+
                 var groupMatched = new ListViewGroup("Matched (" + matched.Count + ")");
                 var groupMissing = new ListViewGroup("Not found (" + missing.Count + ")");
                 var groupAmbiguous = new ListViewGroup("Ambiguous (" + ambiguous.Count + ")");
-                var groupUnregistered = new ListViewGroup("In folder, not registered (" + scan.Unregistered.Count + ")");
+                var groupUnregistered = new ListViewGroup(waiting
+                    ? "In folder, not registered (still loading)"
+                    : "In folder, not registered (" + scan.Unregistered.Count + ")");
                 _lvSource.Groups.AddRange(new[] { groupMatched, groupMissing, groupAmbiguous, groupUnregistered });
 
                 foreach (var v in matched)
@@ -1535,7 +1749,7 @@ namespace PluginStepCodegen
                     }
                 }
 
-                foreach (var local in scan.Unregistered)
+                foreach (var local in waiting ? Enumerable.Empty<LocalClass>() : scan.Unregistered)
                 {
                     var item = new ListViewItem(Relative(scan.Folder, local.File), groupUnregistered)
                     {
@@ -1597,7 +1811,9 @@ namespace PluginStepCodegen
             var parts = new List<string> { matched + " matched" + (stale > 0 ? " (" + stale + " stale)" : string.Empty) };
             if (missing > 0) parts.Add(missing + " not found");
             if (ambiguous > 0) parts.Add(ambiguous + " ambiguous");
-            if (scan.Unregistered.Count > 0) parts.Add(scan.Unregistered.Count + " unregistered");
+            // Counted against every registration there is, so not counted at all until there is.
+            if (Outstanding) parts.Add("still loading");
+            else if (scan.Unregistered.Count > 0) parts.Add(scan.Unregistered.Count + " unregistered");
             return string.Join(" · ", parts);
         }
 
@@ -1749,6 +1965,12 @@ namespace PluginStepCodegen
                 return output[t.Id];
             };
 
+            // Held down for the duration, because the button is otherwise live throughout its own
+            // write: two writers over the same files, and a backup name only accurate to the
+            // second, so the two .bak copies collide and the pristine original is the one lost.
+            _writing = true;
+            UpdateButtonState();
+
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Writing " + types.Count + (types.Count == 1 ? " class..." : " classes..."),
@@ -1756,6 +1978,14 @@ namespace PluginStepCodegen
                     folder, types, writeAmbiguous, compose),
                 PostWorkCallBack = args =>
                 {
+                    if (IsDisposed)
+                    {
+                        return;
+                    }
+
+                    _writing = false;
+                    UpdateButtonState();
+
                     if (args.Error != null)
                     {
                         MessageBox.Show(args.Error.Message, "Write failed",
@@ -1767,15 +1997,18 @@ namespace PluginStepCodegen
 
                     // A tally of what happened to which file, not source, so it is left uncoloured.
                     CsSyntaxHighlighter.Plain(_txtPreview, report.Format());
+
+                    // What was stale is now current, and the marks should say so without being
+                    // asked. Started before the report is read rather than after, so the folder is
+                    // being reread while somebody is looking at the dialog.
+                    StartScan();
+
                     MessageBox.Show(
                         report.Written.Count + " file(s) updated, " + report.Unchanged.Count
                         + " unchanged, " + report.Skipped + " skipped."
                         + Environment.NewLine + Environment.NewLine
                         + "A timestamped .bak copy was left beside every file that changed.",
                         "Write complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                    // What was stale is now current, and the marks should say so without being asked.
-                    StartScan();
                 }
             });
         }

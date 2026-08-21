@@ -57,17 +57,32 @@ namespace PluginStepCodegen.Logic
         /// many assemblies as another has classes, and documenting it one assembly at a time is not
         /// a workflow. The work per assembly is the same either way: the ids are batched into the
         /// same three queries.
+        ///
+        /// <paramref name="cancelled"/> is asked between round trips and between pages, which is
+        /// as often as it can be: a query already on the wire cannot be recalled. That is still
+        /// most of the wait on a link where the wait is the round trips rather than the rows -
+        /// three of the four here happen after the first. A run that stops early returns nothing
+        /// rather than a half list, because the caller that cancelled is not going to read it and
+        /// the one that did not must never be handed a partial answer as a whole one.
         /// </summary>
-        public static List<PluginTypeInfo> GetPluginTypes(IOrganizationService service, IList<Guid> assemblyIds)
+        public static List<PluginTypeInfo> GetPluginTypes(IOrganizationService service, IList<Guid> assemblyIds,
+            Func<bool> cancelled = null)
         {
-            var types = GetTypes(service, assemblyIds);
+            var stop = cancelled ?? (() => false);
+            var nothing = new List<PluginTypeInfo>();
+
+            var types = GetTypes(service, assemblyIds, stop);
             if (types.Count == 0)
             {
-                return types;
+                return stop() ? nothing : types;
             }
 
             var byId = types.ToDictionary(t => t.Id);
-            var steps = GetSteps(service, byId.Keys.ToList());
+            var steps = GetSteps(service, byId.Keys.ToList(), stop);
+            if (stop())
+            {
+                return nothing;
+            }
 
             var stepsById = new Dictionary<Guid, PluginStepInfo>();
             foreach (var pair in steps)
@@ -84,7 +99,7 @@ namespace PluginStepCodegen.Logic
 
             if (stepsById.Count > 0)
             {
-                foreach (var image in GetImages(service, stepsById.Keys.ToList()))
+                foreach (var image in GetImages(service, stepsById.Keys.ToList(), stop))
                 {
                     PluginStepInfo step;
                     if (stepsById.TryGetValue(image.Value, out step))
@@ -92,6 +107,11 @@ namespace PluginStepCodegen.Logic
                         step.Images.Add(image.Key);
                     }
                 }
+            }
+
+            if (stop())
+            {
+                return nothing;
             }
 
             // Steps in execution order, so the emitted attributes read the way they run -
@@ -113,9 +133,9 @@ namespace PluginStepCodegen.Logic
             return types.Where(t => t.Steps.Count > 0).OrderBy(t => t.TypeName).ToList();
         }
 
-        private static List<PluginTypeInfo> GetTypes(IOrganizationService service, IList<Guid> assemblyIds)
+        private static List<PluginTypeInfo> GetTypes(IOrganizationService service, IList<Guid> assemblyIds, Func<bool> stop)
         {
-            return Retrieve(service, assemblyIds, ids => new QueryExpression("plugintype")
+            return Retrieve(service, assemblyIds, stop, ids => new QueryExpression("plugintype")
             {
                 ColumnSet = new ColumnSet("plugintypeid", "typename", "friendlyname", "description", "pluginassemblyid"),
                 Criteria =
@@ -138,9 +158,9 @@ namespace PluginStepCodegen.Logic
         }
 
         /// <summary>Returns each step paired with the id of the plugin type it belongs to.</summary>
-        private static List<KeyValuePair<PluginStepInfo, Guid>> GetSteps(IOrganizationService service, List<Guid> typeIds)
+        private static List<KeyValuePair<PluginStepInfo, Guid>> GetSteps(IOrganizationService service, List<Guid> typeIds, Func<bool> stop)
         {
-            return Retrieve(service, typeIds, ids => BuildStepQuery(ids))
+            return Retrieve(service, typeIds, stop, ids => BuildStepQuery(ids))
                 .Select(e => new KeyValuePair<PluginStepInfo, Guid>(
                     new PluginStepInfo
                     {
@@ -203,9 +223,9 @@ namespace PluginStepCodegen.Logic
         }
 
         /// <summary>Returns each image paired with the id of the step it belongs to.</summary>
-        private static List<KeyValuePair<PluginImageInfo, Guid>> GetImages(IOrganizationService service, List<Guid> stepIds)
+        private static List<KeyValuePair<PluginImageInfo, Guid>> GetImages(IOrganizationService service, List<Guid> stepIds, Func<bool> stop)
         {
-            return Retrieve(service, stepIds, ids => new QueryExpression("sdkmessageprocessingstepimage")
+            return Retrieve(service, stepIds, stop, ids => new QueryExpression("sdkmessageprocessingstepimage")
             {
                 ColumnSet = new ColumnSet(
                     "sdkmessageprocessingstepimageid", "imagetype", "entityalias",
@@ -301,11 +321,17 @@ namespace PluginStepCodegen.Logic
         /// </summary>
         private const int IdsPerQuery = 250;
 
-        private static List<Entity> Retrieve(IOrganizationService service, IList<Guid> ids, Func<object[], QueryExpression> build)
+        private static List<Entity> Retrieve(IOrganizationService service, IList<Guid> ids, Func<bool> stop,
+            Func<object[], QueryExpression> build)
         {
             var results = new List<Entity>();
             for (var offset = 0; offset < ids.Count; offset += IdsPerQuery)
             {
+                if (stop())
+                {
+                    break;
+                }
+
                 var chunk = ids.Skip(offset).Take(IdsPerQuery).Cast<object>().ToArray();
                 var query = build(chunk);
                 query.PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 };
@@ -314,7 +340,7 @@ namespace PluginStepCodegen.Logic
                 {
                     var page = service.RetrieveMultiple(query);
                     results.AddRange(page.Entities);
-                    if (!page.MoreRecords)
+                    if (!page.MoreRecords || stop())
                     {
                         break;
                     }
