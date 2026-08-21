@@ -94,13 +94,22 @@ namespace PluginStepCodegen.Logic
                 }
             }
 
-            // Steps in execution order, so the emitted attributes read the way they run.
+            // Steps by table, alphabetically, and within a table in execution order: stage,
+            // rank, message. A generic plugin - one class registered against a dozen tables
+            // to stamp the same column on all of them - is the shape that decides this.
+            // Ordering such a class by stage alone interleaves every table with every other,
+            // and there is nothing to be gained by it: steps on different tables never run
+            // against each other, so the execution order between them orders nothing. Within
+            // one table it is a real sequence, and that is where it is kept. Steps on a
+            // global message have no table to group under and go last.
             foreach (var type in types)
             {
                 type.Steps = type.Steps
-                    .OrderBy(s => s.Stage)
+                    .OrderBy(s => s.HasEntity ? 0 : 1)
+                    .ThenBy(s => s.PrimaryEntityName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(s => s.Stage)
                     .ThenBy(s => s.Rank)
-                    .ThenBy(s => s.MessageName)
+                    .ThenBy(s => s.MessageName, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
 

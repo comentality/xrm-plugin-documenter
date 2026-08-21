@@ -240,7 +240,7 @@ Needs the network for the restores. Needs no Dataverse connection and no `regist
 
 # Expected output
 
-Thirty three steps across twenty seven registered plugin types in six assemblies.
+Forty three steps across twenty eight registered plugin types in six assemblies.
 
 ## The assembly list
 
@@ -276,13 +276,13 @@ strength of its name alone.
 Ticking both rows in the default list:
 
 ```
-2 assemblies · 16 of 16 classes
+2 assemblies · 17 of 17 classes
 ```
 
 Turning **Managed** on and ticking all five:
 
 ```
-5 assemblies · 22 of 22 classes · 1 with no steps
+5 assemblies · 23 of 23 classes · 1 with no steps
 ```
 
 `Contoso.Crm.Empty` is the one with no steps. It contributes no group at all to the class
@@ -492,6 +492,53 @@ limit is the line width.
 /// Sync Post-Update of contact (order 10): (all columns)
 ```
 
+### StatusDateStamper
+
+The generic plugin: one class, five tables, a create and an update on each. A plugin
+repository has far more of these than it has one-table plugins - the same column stamped
+wherever the class is registered - and it is the shape that decides how steps are ordered.
+Ten steps sorted by stage alone interleave five tables into a list nobody can read, and
+buy nothing doing it: steps on different tables never run against each other.
+
+So the tables come out **alphabetically**, and within a table the steps keep the order
+they run in. Registered scrambled, like `WideRegistration`, and each table pins a
+different tiebreak:
+
+- `annotation` reads update-then-create, because its update is `PreOperation` and its
+  create `PostOperation`. This is the one that would break if the block were sorted by
+  message name rather than grouped by table.
+- `account` ties on both stage and rank, so the message name separates the two.
+- `contact` is separated by rank alone.
+
+```csharp
+[Plugin(Description = "Stamps the status date on whatever it is registered against.")]
+[Step("Create", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "annotation", Stages.PreOperation, ExecutionMode.Synchronous)]
+[Step("Create", "annotation", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Create", "contact", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "contact", Stages.PostOperation, ExecutionMode.Synchronous, ExecutionOrder = 2)]
+[Step("Create", "email", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "email", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Create", "task", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "task", Stages.PostOperation, ExecutionMode.Synchronous)]
+```
+```csharp
+/// Sync Post-Create of account (order 1): (all columns)
+/// Sync Post-Update of account (order 1): (all columns)
+/// Sync Pre-Update of annotation (order 1): (all columns)
+/// Sync Post-Create of annotation (order 1): (all columns)
+/// Sync Post-Create of contact (order 1): (all columns)
+/// Sync Post-Update of contact (order 2): (all columns)
+/// Sync Post-Create of email (order 1): (all columns)
+/// Sync Post-Update of email (order 1): (all columns)
+/// Sync Post-Create of task (order 1): (all columns)
+/// Sync Post-Update of task (order 1): (all columns)
+```
+
+`GlobalMessageHandler` is the other side of the same rule: a step on a global message has
+no table to group under, and goes last.
+
 ### NearlyAllColumns
 
 The three shapes of a column list the experimental `(all columns except: ...)` rendering
@@ -504,7 +551,7 @@ that turns out to be. `verify.ps1` recomputes the same lists from the same metad
 `write.ps1` expands them against declared stand-in universes, so live and headless agree
 on everything but the counts.
 
-With the setting on, the comment collapses to the exceptions; the third step's list
+With the setting on, the comment collapses to the exceptions; the contact step's list
 holds `createdon`, which is real but not updatable and so is outside the updatable set a
 filter is measured against — the list stays verbatim, because the odd name out is the
 finding. (A deleted column's leftover name would take the same path, but cannot be
@@ -515,12 +562,15 @@ below is the live count of task's updatable columns (10 in the headless stand-in
 ```csharp
 /// Sync Post-Update of annotation (order 1): (all columns except: notetext, subject)
 ///     PreImage: (all columns except: documentbody)
-/// Sync Post-Update of task (order 2): (all N columns, written out)
 /// Sync Post-Update of contact (order 3): createdon, firstname, lastname
+/// Sync Post-Update of task (order 2): (all N columns, written out)
 ```
 
-With it off — the default — the first two steps and the image are recited exactly as
-registered, wrapping like WideRegistration's. Attribute mode always writes the literal
+Three tables, so the block is in table order and the ranks read 1, 3, 2 — which is what
+grouping by table looks like when the ranks were assigned across one.
+
+With it off — the default — the annotation and task steps and the image are recited
+exactly as registered, wrapping like WideRegistration's. Attribute mode always writes the literal
 lists, whatever the setting; they have to compile, and they do.
 
 The image is measured against every real column of annotation where the filter is
@@ -815,36 +865,36 @@ matter. It is pinned here as behaviour, not endorsed as correct.
 Two reports are worth having, because the tool has two states worth being in.
 
 **The default list**, both switches off, both assemblies ticked, source folder `tests\src`
-- sixteen classes, every one resolving to a file — `Duplicate` and `Rival` match two files
-each on the short name, and the registered namespace picks the right one:
+- seventeen classes, every one resolving to a file — `Duplicate` and `Rival` match two
+files each on the short name, and the registered namespace picks the right one:
 
 ```
-// Updated (16)
+// Updated (17)
 //   ... every class with a file, Twin once
 ```
 
-Run it again and everything says `Already up to date (16)`. This is the run that settles,
+Run it again and everything says `Already up to date (17)`. This is the run that settles,
 which is what a developer documenting their own assembly should get.
 
-**With Managed and Microsoft's both on** and all six assemblies ticked, all twenty three
+**With Managed and Microsoft's both on** and all six assemblies ticked, all twenty four
 classes are accounted for and pressing Write should produce a report of the shape:
 
 ```
-// Updated (21)
+// Updated (22)
 //   ... every class with a file, Twin twice
 // No matching .cs file (2)
 //   Bravo
 //   Ghost
 ```
 
-Twenty one writes over twenty files, because `Twin` is written once per assembly. Run it
-a second time without changing anything and it becomes:
+Twenty two writes over twenty one files, because `Twin` is written once per assembly. Run
+it a second time without changing anything and it becomes:
 
 ```
 // Updated (2)
 //   Twin
 //   Twin
-// Already up to date (19)
+// Already up to date (20)
 ```
 
 `Twin` is the one thing that cannot settle: the two registrations overwrite each other on

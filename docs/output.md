@@ -4,8 +4,15 @@ Two shapes, chosen with the **Write** toggle. They are independent: each replace
 own block, so switching modes never deletes the other one's work, and a class can carry
 both.
 
-Steps are ordered the way they run — stage, then execution order, then message name — so
-the block reads as an execution plan rather than as whatever order the query returned.
+Steps are grouped by table, tables in alphabetical order, and within one table they are
+ordered the way they run — stage, then execution order, then message name.
+
+A generic plugin — one class registered against a dozen tables to stamp the same column on
+all of them — is what decides that. Ordering the whole block by stage interleaves every
+table with every other, and buys nothing: steps on different tables never run against each
+other, so there is no execution order between them to preserve. Within a table there is,
+and that is where it is kept. Steps on a global message have no table to group under and
+come last.
 
 ## Xrm Tools attributes
 
@@ -32,8 +39,7 @@ see [Attribute definitions file](attribute-definitions.md) for what has to be in
 project for that.
 
 **Attribute order is load bearing.** `[Image]` binds to the nearest preceding `[Step]`, so
-steps are written in execution order with their own images following them. Do not sort
-them.
+every step is written with its own images following it. Do not sort them.
 
 ### The style
 

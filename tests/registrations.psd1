@@ -169,6 +169,10 @@
                 # The three shapes of a column list the "(all columns except: ...)"
                 # experiment has to tell apart.
                 @{ Id = '0f'; Name = 'TestPlugins.NearlyAllColumns' }
+                # One class, five tables, a create and an update on each: the generic
+                # plugin, and the reason steps are grouped by table rather than by stage.
+                @{ Id = '10'; Name = 'TestPlugins.StatusDateStamper'
+                   Description = 'Stamps the status date on whatever it is registered against.' }
             )
 
             Steps = @(
@@ -339,6 +343,62 @@
                     Id = '17'; Type = 'TestPlugins.NearlyAllColumns'
                     Message = 'Update'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 3
                     Filter = 'createdon,firstname,lastname'
+                }
+
+                # --- The generic plugin: the same pair of steps on five tables, registered
+                # --- in no order at all, so what comes back is whatever the tool sorted.
+                # Read the emitted block and the tables have to appear alphabetically -
+                # account, annotation, contact, email, task - each carrying its own two
+                # steps together. Every step here is deliberately plain: no filter, no
+                # name, no description, because what this fixture is about is the order
+                # ten of them come out in and nothing else.
+                @{
+                    Id = '18'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Update'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 1
+                }
+                @{
+                    Id = '19'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Update'; Entity = 'account'; Stage = 40; Mode = 0; Rank = 1
+                }
+                @{
+                    Id = '1a'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Create'; Entity = 'email'; Stage = 40; Mode = 0; Rank = 1
+                }
+                # Ranked second, and the create on the same table is ranked first, so
+                # within contact the rank is what puts them in order.
+                @{
+                    Id = '1b'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Update'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 2
+                }
+                # The one table whose two steps run in the order message names would not
+                # give: PostOperation on create, PreOperation on update, so the update is
+                # written first. A table's steps keep running order; only the tables
+                # themselves are alphabetical.
+                @{
+                    Id = '1c'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Create'; Entity = 'annotation'; Stage = 40; Mode = 0; Rank = 1
+                }
+                @{
+                    Id = '1d'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Create'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 1
+                }
+                # Ties with the update on account on stage and rank; the message name is
+                # all that separates them, exactly as it does inside WideRegistration.
+                @{
+                    Id = '1e'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Create'; Entity = 'account'; Stage = 40; Mode = 0; Rank = 1
+                }
+                @{
+                    Id = '1f'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Update'; Entity = 'email'; Stage = 40; Mode = 0; Rank = 1
+                }
+                @{
+                    Id = '20'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Create'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 1
+                }
+                @{
+                    Id = '21'; Type = 'TestPlugins.StatusDateStamper'
+                    Message = 'Update'; Entity = 'annotation'; Stage = 20; Mode = 0; Rank = 1
                 }
 
                 # TestPlugins.NeverRegistered and TestPlugins.Beta.Duplicate are deliberately

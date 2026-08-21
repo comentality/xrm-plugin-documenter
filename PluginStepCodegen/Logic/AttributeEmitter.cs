@@ -64,10 +64,9 @@ namespace PluginStepCodegen.Logic
         private static string EmitStep(PluginStepInfo step, string typeName)
         {
             var entity = step.PrimaryEntityName;
-            // Global messages register against no entity; spkl writes "none", Xrm Tools
-            // wants the constructor overload without an entity at all.
-            var hasEntity = !string.IsNullOrWhiteSpace(entity)
-                            && !string.Equals(entity, "none", StringComparison.OrdinalIgnoreCase);
+            // Xrm Tools wants the constructor overload with no entity at all where a step
+            // has none, rather than the "none" spkl writes.
+            var hasEntity = step.HasEntity;
             var hasFilter = !string.IsNullOrWhiteSpace(step.FilteringAttributes);
 
             var positional = new List<string> { Literal(step.MessageName) };

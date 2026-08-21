@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Steps are grouped by table.** A generic plugin — one class registered against a dozen
+  tables to stamp the same column on all of them — used to come out interleaved, every
+  table's steps scattered through the block by stage. Tables now come out alphabetically
+  with their own steps together, and stage, execution order and message name order the
+  steps *within* a table, where the sequence actually means something. Steps on a global
+  message have no table to group under and go last.
+
+  ```csharp
+  [Step("Create", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
+  [Step("Update", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
+  [Step("Update", "annotation", Stages.PreOperation, ExecutionMode.Synchronous)]
+  [Step("Create", "annotation", Stages.PostOperation, ExecutionMode.Synchronous)]
+  ```
+
 - `XrmToolsMetaAttributes.cs` gains `Stages.DepecratedPostOperation = 50` — upstream's
   spelling, upstream's `[Obsolete]` — which it had been missing. Nothing the tool writes
   changes: a step at the retired stage 50 is still emitted as `(Stages)50`, because naming

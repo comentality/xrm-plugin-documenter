@@ -148,8 +148,9 @@ function ConvertTo-EmitterColumns {
 }
 
 # ------------------------------------------------- registrations.psd1 -> the tool's model
-# Mirrors RegistrationQuery: only types with steps, types by name, steps by stage, rank,
-# message; a step keeps the name Dataverse generated unless the fixture typed one.
+# Mirrors RegistrationQuery: only types with steps, types by name, steps by table and then
+# by stage, rank and message within it, steps on a global message last; a step keeps the
+# name Dataverse generated unless the fixture typed one.
 function Get-TypeModels {
     param([hashtable] $Assembly)
 
@@ -168,7 +169,12 @@ function Get-TypeModels {
         $type.FriendlyName = Get-FriendlyName $Assembly $t.Name
         if ($t.ContainsKey('Description')) { $type.Description = $t.Description }
 
-        foreach ($s in $steps | Sort-Object { $_.Stage }, { $_.Rank }, { $_.Message }) {
+        $ordered = $steps | Sort-Object `
+            { if ($_.ContainsKey('Entity')) { 0 } else { 1 } },
+            { Get-StepEntity $_ },
+            { $_.Stage }, { $_.Rank }, { $_.Message }
+
+        foreach ($s in $ordered) {
             $step = New-Object PluginStepCodegen.Logic.PluginStepInfo
             $step.Id = [guid](Get-StepId $Assembly $s)
             $step.MessageName = $s.Message
@@ -289,23 +295,53 @@ $sandboxA = New-Sandbox 'a'
 $before = Get-SourceHashes $sandboxA
 $defaultTypes = Get-CheckedTypes { $null -eq $_.Solution }
 
-Check 'sixteen classes in the default list' ($defaultTypes.Count -eq 16) "(got $($defaultTypes.Count))"
+Check 'seventeen classes in the default list' ($defaultTypes.Count -eq 17) "(got $($defaultTypes.Count))"
 
 $a1 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
-Check 'attributes: all sixteen updated, nothing skipped' `
-    (@($a1.Updated).Count -eq 16 -and @($a1.Ambiguous).Count -eq 0 -and
+Check 'attributes: all seventeen updated, nothing skipped' `
+    (@($a1.Updated).Count -eq 17 -and @($a1.Ambiguous).Count -eq 0 -and
      @($a1.NotFound).Count -eq 0 -and @($a1.Failed).Count -eq 0) "($(Format-Report $a1))"
 
 $a2 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
-Check 'attributes again: all sixteen already up to date' `
-    (@($a2.Unchanged).Count -eq 16 -and @($a2.Updated).Count -eq 0) "($(Format-Report $a2))"
+Check 'attributes again: all seventeen already up to date' `
+    (@($a2.Unchanged).Count -eq 17 -and @($a2.Updated).Count -eq 0) "($(Format-Report $a2))"
+
+# --- The generic plugin: five tables, ten steps, grouped by table rather than by stage.
+# Read in attribute mode, before the comment run rewrites the file.
+$stamper = Get-Content (Join-Path $sandboxA 'TestPlugins\Plugins\StatusDateStamper.cs') -Raw
+$stamperSteps = @([regex]::Matches($stamper, '\[Step\("(?<message>\w+)", "(?<entity>\w+)"') |
+    ForEach-Object { "$($_.Groups['entity'].Value)/$($_.Groups['message'].Value)" })
+$expectedStamper = @(
+    'account/Create', 'account/Update'
+    'annotation/Update', 'annotation/Create'   # PreOperation before PostOperation
+    'contact/Create', 'contact/Update'         # rank 1 before rank 2
+    'email/Create', 'email/Update'
+    'task/Create', 'task/Update'
+)
+Check 'the generic plugin is grouped by table, alphabetically' `
+    (($stamperSteps -join ' ') -eq ($expectedStamper -join ' ')) "(got $($stamperSteps -join ' '))"
 
 $a3 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
-Check 'comment: all sixteen updated' (@($a3.Updated).Count -eq 16) "($(Format-Report $a3))"
+Check 'comment: all seventeen updated' (@($a3.Updated).Count -eq 17) "($(Format-Report $a3))"
 
 $a4 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
-Check 'comment again: all sixteen already up to date' `
-    (@($a4.Unchanged).Count -eq 16 -and @($a4.Updated).Count -eq 0) "($(Format-Report $a4))"
+Check 'comment again: all seventeen already up to date' `
+    (@($a4.Unchanged).Count -eq 17 -and @($a4.Updated).Count -eq 0) "($(Format-Report $a4))"
+
+# The comment orders the same steps the same way, off the same list.
+Test-FileContains $sandboxA 'TestPlugins\Plugins\StatusDateStamper.cs' `
+    '/// Sync Post-Create of account (order 1): (all columns)'
+$stamperComment = Get-Content (Join-Path $sandboxA 'TestPlugins\Plugins\StatusDateStamper.cs') -Raw
+Check 'the comment groups by table too' `
+    ($stamperComment.IndexOf('Pre-Update of annotation') -lt $stamperComment.IndexOf('Post-Create of annotation') -and
+     $stamperComment.IndexOf('Post-Update of account') -lt $stamperComment.IndexOf('Pre-Update of annotation'))
+
+# A step with no table to group under still emits both ways: the entity is what the
+# ordering now keys on, and a global message has none.
+Test-FileContains $sandboxA 'TestPlugins\Plugins\GlobalMessageHandler.cs' `
+    '[Step("Associate", Stages.PreValidation, ExecutionMode.Synchronous)]'
+Test-FileContains $sandboxA 'TestPlugins\Plugins\GlobalMessageHandler.cs' `
+    '/// Sync PreValidation-Associate (order 1)'
 
 # The namespace settles both short name collisions in this view.
 Test-FileContains $sandboxA 'TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs' `
@@ -316,9 +352,10 @@ Test-FileContains $sandboxA 'TestPlugins\Plugins\Rival.cs' `
 # The impersonation stand-in went through the same plumbing the real name would.
 Test-FileContains $sandboxA 'TestPlugins\Plugins\DisabledAndImpersonated.cs' 'E2E Test User'
 
-# Exactly the sixteen files, and nothing else, changed.
+# Exactly the seventeen files, and nothing else, changed.
 $expectedChangedA = @(
     'TestPlugins\Plugins\SimpleCreate.cs'
+    'TestPlugins\Plugins\StatusDateStamper.cs'
     'TestPlugins\Plugins\FilteredUpdate.cs'
     'TestPlugins\Plugins\AsyncWorker.cs'
     'TestPlugins\Plugins\GlobalMessageHandler.cs'
@@ -339,7 +376,7 @@ $after = Get-SourceHashes $sandboxA
 $changed = @($before.Keys | Where-Object { $before[$_] -ne $after[$_] } | Sort-Object)
 $unexpected = @($changed | Where-Object { $expectedChangedA -notcontains $_ })
 $unwritten = @($expectedChangedA | Where-Object { $changed -notcontains $_ })
-Check 'exactly the sixteen expected files changed' `
+Check 'exactly the seventeen expected files changed' `
     ($unexpected.Count -eq 0 -and $unwritten.Count -eq 0) `
     "(unexpected: $($unexpected -join ', '); missed: $($unwritten -join ', '))"
 
@@ -359,11 +396,11 @@ $sandboxB = New-Sandbox 'b'
 $beforeB = Get-SourceHashes $sandboxB
 $allTypes = Get-CheckedTypes { $true }
 
-Check 'twenty three classes with all assemblies ticked' ($allTypes.Count -eq 23) "(got $($allTypes.Count))"
+Check 'twenty four classes with all assemblies ticked' ($allTypes.Count -eq 24) "(got $($allTypes.Count))"
 
 $b1 = Invoke-WriteRun $sandboxB $allTypes 'Attributes'
-Check 'twenty one updated, none ambiguous' `
-    (@($b1.Updated).Count -eq 21 -and @($b1.Ambiguous).Count -eq 0 -and @($b1.Failed).Count -eq 0) `
+Check 'twenty two updated, none ambiguous' `
+    (@($b1.Updated).Count -eq 22 -and @($b1.Ambiguous).Count -eq 0 -and @($b1.Failed).Count -eq 0) `
     "($(Format-Report $b1))"
 Check 'only Bravo and Ghost have no source' `
     ((@($b1.NotFound) | Sort-Object) -join ',' -eq 'Bravo,Ghost') "(got $($b1.NotFound -join ', '))"
@@ -371,7 +408,7 @@ Check 'Twin written once per assembly' (@($b1.Updated | Where-Object { $_ -eq 'T
 
 $b2 = Invoke-WriteRun $sandboxB $allTypes 'Attributes'
 Check 'second run: only Twin cannot settle' `
-    ((@($b2.Updated) -join ',') -eq 'Twin,Twin' -and @($b2.Unchanged).Count -eq 19) "($(Format-Report $b2))"
+    ((@($b2.Updated) -join ',') -eq 'Twin,Twin' -and @($b2.Unchanged).Count -eq 20) "($(Format-Report $b2))"
 
 # Each Rival registration landed in its own file, never the other's.
 Test-FileContains $sandboxB 'TestPlugins\Plugins\Rival.cs' `
@@ -403,12 +440,12 @@ $sandboxC = New-Sandbox 'c'
 $emitterColumns = ConvertTo-EmitterColumns $standInColumns
 
 $c1 = Invoke-WriteRun $sandboxC $defaultTypes 'Comment' $emitterColumns
-Check 'comment with columns: all sixteen updated' `
-    (@($c1.Updated).Count -eq 16 -and @($c1.Failed).Count -eq 0) "($(Format-Report $c1))"
+Check 'comment with columns: all seventeen updated' `
+    (@($c1.Updated).Count -eq 17 -and @($c1.Failed).Count -eq 0) "($(Format-Report $c1))"
 
 $c2 = Invoke-WriteRun $sandboxC $defaultTypes 'Comment' $emitterColumns
-Check 'comment with columns again: all sixteen already up to date' `
-    (@($c2.Unchanged).Count -eq 16 -and @($c2.Updated).Count -eq 0) "($(Format-Report $c2))"
+Check 'comment with columns again: all seventeen already up to date' `
+    (@($c2.Unchanged).Count -eq 17 -and @($c2.Updated).Count -eq 0) "($(Format-Report $c2))"
 
 # The three shapes, one step each: near-complete says its exceptions, complete says it
 # is complete, and a name outside the universe - createdon is real but not updatable -

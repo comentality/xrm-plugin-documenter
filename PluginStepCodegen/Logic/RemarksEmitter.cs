@@ -73,9 +73,7 @@ namespace PluginStepCodegen.Logic
         private static string StepHeader(PluginStepInfo step)
         {
             var entity = step.PrimaryEntityName;
-            // Global messages register against no entity; spkl writes "none".
-            var hasEntity = !string.IsNullOrWhiteSpace(entity)
-                            && !string.Equals(entity, "none", StringComparison.OrdinalIgnoreCase);
+            var hasEntity = step.HasEntity;
 
             var facts = new List<string> { "order " + step.Rank.ToString(CultureInfo.InvariantCulture) };
             if (step.IsDisabled)

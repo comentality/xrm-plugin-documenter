@@ -109,6 +109,23 @@ namespace PluginStepCodegen.Logic
         public Guid Id;
         public string MessageName;
         public string PrimaryEntityName;
+
+        /// <summary>
+        /// Whether the step is registered against a table at all. A step on a global message
+        /// is not, and the absence has two spellings: Dataverse leaves the filter empty,
+        /// spkl writes the literal "none". Both mean the same thing everywhere it is asked -
+        /// which constructor overload to emit, which words the comment uses, and which steps
+        /// group under a table when they are ordered.
+        /// </summary>
+        public bool HasEntity
+        {
+            get
+            {
+                return !string.IsNullOrWhiteSpace(PrimaryEntityName)
+                       && !string.Equals(PrimaryEntityName, "none", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
         public string FilteringAttributes;
         public int Stage;
         public int Mode;
