@@ -50,11 +50,11 @@ namespace PluginStepCodegen
         private readonly Font _listFont = new Font("Segoe UI", 9f);
         private readonly Font _codeFont = new Font("Consolas", 9f);
         /// <summary>A size up from the toolbar's own, so the dagger reads as a mark rather than a speck.</summary>
-        private readonly Font _guruFont = new Font("Segoe UI", 11f);
-        /// <summary>Loaded before the UI is built, because the guru menu's check marks read from it.</summary>
-        private GuruSettings _guru = new GuruSettings();
-        private Button _btnGuru;
-        private ContextMenuStrip _guruMenu;
+        private readonly Font _daggerFont = new Font("Segoe UI", 11f);
+        /// <summary>Loaded before the UI is built, because the experimental menu's check marks read from it.</summary>
+        private ExperimentalSettings _experimental = new ExperimentalSettings();
+        private Button _btnExperimental;
+        private ContextMenuStrip _experimentalMenu;
 
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
@@ -113,10 +113,10 @@ namespace PluginStepCodegen
 
         public PluginStepCodegenControl()
         {
-            GuruSettings loaded;
+            ExperimentalSettings loaded;
             if (SettingsManager.Instance.TryLoad(typeof(PluginStepCodegenControl), out loaded) && loaded != null)
             {
-                _guru = loaded;
+                _experimental = loaded;
             }
 
             InitializeComponent();
@@ -453,44 +453,46 @@ namespace PluginStepCodegen
                 _btnPreviewToggle.Text = hide ? "◂ Preview" : "Preview ▸";
             };
 
-            // The dagger: guru settings, experiments running as opt-ins until they earn
-            // being the default. A menu rather than a dialog, because each one is a single
-            // check and the button should cost one click to inspect. The glyph is plain
-            // text, not emoji, so it draws in the toolbar's own font and colour.
-            _btnGuru = new Button
+            // The dagger: experimental settings, experiments running as opt-ins until they
+            // earn being the default. A menu rather than a dialog, because each one is a
+            // single check and the button should cost one click to inspect. The glyph is
+            // plain text, not emoji, so it draws in the toolbar's own font and colour.
+            _btnExperimental = new Button
             {
                 Text = "†",
                 Width = 30,
                 Height = 24,
                 Margin = new Padding(12, 0, 0, 4),
-                Font = _guruFont
+                Font = _daggerFont
             };
 
             var miAllColumnsExcept = new ToolStripMenuItem("Say near-complete column lists as \"(all columns except ...)\"")
             {
                 CheckOnClick = true,
-                Checked = _guru.AllColumnsExcept,
+                Checked = _experimental.AllColumnsExcept,
                 ToolTipText = "Comment mode only. An image or filter covering nearly every column of its table\r\n"
                               + "is written as the handful it leaves out, measured against the table's columns today."
             };
             miAllColumnsExcept.CheckedChanged += (s, e) =>
             {
-                _guru.AllColumnsExcept = miAllColumnsExcept.Checked;
-                SettingsManager.Instance.Save(typeof(PluginStepCodegenControl), _guru);
+                _experimental.AllColumnsExcept = miAllColumnsExcept.Checked;
+                SettingsManager.Instance.Save(typeof(PluginStepCodegenControl), _experimental);
                 // Staleness and the preview are both questions about the output, so this
                 // re-renders exactly the way a mode switch does.
                 RenderScan();
             };
 
-            _guruMenu = new ContextMenuStrip { ShowImageMargin = false };
-            _guruMenu.Items.Add(new ToolStripMenuItem("Guru settings") { Enabled = false });
-            _guruMenu.Items.Add(new ToolStripSeparator());
-            _guruMenu.Items.Add(miAllColumnsExcept);
-            _btnGuru.Click += (s, e) => _guruMenu.Show(_btnGuru, new Point(0, _btnGuru.Height));
+            // Check marks draw in the image margin, so hiding it without opening the check
+            // margin would leave a toggle that flips with nothing to show for it.
+            _experimentalMenu = new ContextMenuStrip { ShowImageMargin = false, ShowCheckMargin = true };
+            _experimentalMenu.Items.Add(new ToolStripMenuItem("Experimental") { Enabled = false });
+            _experimentalMenu.Items.Add(new ToolStripSeparator());
+            _experimentalMenu.Items.Add(miAllColumnsExcept);
+            _btnExperimental.Click += (s, e) => _experimentalMenu.Show(_btnExperimental, new Point(0, _btnExperimental.Height));
 
             var modeRow = Row(_rbAttributes, _rbComment);
             modeRow.Margin = new Padding(0, 0, 0, 4);
-            var cornerRow = Row(_btnGuru, _btnPreviewToggle);
+            var cornerRow = Row(_btnExperimental, _btnPreviewToggle);
             cornerRow.Dock = DockStyle.None;
             cornerRow.Anchor = AnchorStyles.Right;
             cornerRow.WrapContents = false;
@@ -621,9 +623,9 @@ namespace PluginStepCodegen
             {
                 _listFont.Dispose();
                 _codeFont.Dispose();
-                _guruFont.Dispose();
+                _daggerFont.Dispose();
                 // A ContextMenuStrip belongs to no Controls collection, so nothing else frees it.
-                if (_guruMenu != null) _guruMenu.Dispose();
+                if (_experimentalMenu != null) _experimentalMenu.Dispose();
             }
         }
 
@@ -923,7 +925,7 @@ namespace PluginStepCodegen
 
                     // The columns are garnish on the comment, never worth failing the load over.
                     // Nothing is recorded on a miss, so the next load simply asks again.
-                    // Fetched even while the guru switch is off - one light request buys the
+                    // Fetched even while the experimental switch is off - one light request buys the
                     // toggle working instantly on whatever is already loaded.
                     Dictionary<string, EntityColumnsInfo> columns;
                     try
@@ -1109,10 +1111,10 @@ namespace PluginStepCodegen
         /// </summary>
         private IEnumerable<string> Remarks(PluginTypeInfo type)
         {
-            // Without the guru switch the columns stay out of the call, and the comment reads
-            // exactly as it did before the option existed.
+            // Without the experimental switch the columns stay out of the call, and the comment
+            // reads exactly as it did before the option existed.
             return _rbComment.Checked
-                ? RemarksEmitter.Emit(type, _guru.AllColumnsExcept ? _columnsByEntity : null)
+                ? RemarksEmitter.Emit(type, _experimental.AllColumnsExcept ? _columnsByEntity : null)
                 : null;
         }
 

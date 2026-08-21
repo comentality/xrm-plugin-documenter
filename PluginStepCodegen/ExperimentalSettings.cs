@@ -1,12 +1,12 @@
 namespace PluginStepCodegen
 {
     /// <summary>
-    /// The settings behind the wizard hat: experiments that run as opt-ins until they earn
+    /// The settings behind the dagger: experiments that run as opt-ins until they earn
     /// being the default. Persisted through XrmToolBox's SettingsManager, which XML
     /// serialises - hence the public parameterless shape, and hence every member defaulting
     /// to off: a setting nobody saved yet must mean the tool as it always behaved.
     /// </summary>
-    public class GuruSettings
+    public class ExperimentalSettings
     {
         /// <summary>
         /// Say a near-complete column list in the summary comment as its exceptions -

@@ -10,9 +10,9 @@
   columns, written out)`, distinct from `(all columns)`, because a spelled-out list is
   pinned to the day it was made while an empty one follows the table. A list carrying a
   column the entity no longer has is left verbatim, so the stale name stays visible.
-- **The dagger.** A † button in the write toolbar opens the guru settings: experiments
-  that run as opt-ins until they earn being the default. The exceptions phrasing above is
-  the first of them, off by default, remembered across sessions.
+- **The dagger.** A † button in the write toolbar opens the experimental settings:
+  experiments that run as opt-ins until they earn being the default. The exceptions
+  phrasing above is the first of them, off by default, remembered across sessions.
 
   ![The dagger button beside the preview toggle](assets/changelog-guru-dagger.png)
 
