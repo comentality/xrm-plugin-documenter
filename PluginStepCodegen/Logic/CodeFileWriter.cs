@@ -92,6 +92,14 @@ namespace PluginStepCodegen.Logic
                     // Deleted between being listed and being opened.
                     continue;
                 }
+                catch (PathTooLongException)
+                {
+                    // Nested past what Windows will open for anybody, which a package cache
+                    // manages without trying. Nothing under it can be written to either, so
+                    // the branch is stepped over the way an unreadable one is - the rest of
+                    // the tree is still the source folder somebody asked about.
+                    continue;
+                }
 
                 foreach (var file in files)
                 {

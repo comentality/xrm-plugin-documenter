@@ -64,6 +64,19 @@
   covering every emitter decision against both, at four package versions, and compares the
   constructed attributes property by property.
 
+- **Nothing that goes wrong should reach XrmToolBox's crash dialog.** Everything the tool
+  does on a worker already reported itself — a failed query, a locked file, a folder that
+  cannot be read — but the same work on the UI thread had no net under it at all, so one
+  unlucky registration could take the tab down while drawing a list. Composing the output
+  for a class is now guarded everywhere it happens: in the preview the class says so in its
+  own place and the rest of the list still renders, in the source column it reads as stale,
+  and on **Write to Files** it lands in the report's Failed section by name, beside the
+  files that could not be written. A settings file XrmToolBox cannot read or write no
+  longer costs the tab either — that read happens before any of the UI exists, so a throw
+  there was a tool that would not open and gave no reason. And a folder nested past what
+  Windows will open — which a package cache manages without trying — is stepped over the
+  way an unreadable one already was, rather than failing the whole scan.
+
 ## 1.1.0
 
 - **"All columns except" phrasing** (experimental, off by default): an image or filter

@@ -113,10 +113,19 @@ namespace PluginStepCodegen
 
         public PluginStepCodegenControl()
         {
-            ExperimentalSettings loaded;
-            if (SettingsManager.Instance.TryLoad(typeof(PluginStepCodegenControl), out loaded) && loaded != null)
+            try
             {
-                _experimental = loaded;
+                ExperimentalSettings loaded;
+                if (SettingsManager.Instance.TryLoad(typeof(PluginStepCodegenControl), out loaded) && loaded != null)
+                {
+                    _experimental = loaded;
+                }
+            }
+            catch (Exception)
+            {
+                // Nothing has been built yet, so a throw here is a tab that never opens and
+                // gives no reason. A settings file that cannot be read is not worth that: the
+                // defaults are what a first run gets anyway, and saving writes them back.
             }
 
             InitializeComponent();
@@ -476,7 +485,17 @@ namespace PluginStepCodegen
             miAllColumnsExcept.CheckedChanged += (s, e) =>
             {
                 _experimental.AllColumnsExcept = miAllColumnsExcept.Checked;
-                SettingsManager.Instance.Save(typeof(PluginStepCodegenControl), _experimental);
+                try
+                {
+                    SettingsManager.Instance.Save(typeof(PluginStepCodegenControl), _experimental);
+                }
+                catch (Exception)
+                {
+                    // The switch has already flipped and the render below honours it. A
+                    // settings file that cannot be written costs the choice next session,
+                    // which is not worth interrupting this one over.
+                }
+
                 // Staleness and the preview are both questions about the output, so this
                 // re-renders exactly the way a mode switch does.
                 RenderScan();
@@ -1124,6 +1143,28 @@ namespace PluginStepCodegen
         }
 
         /// <summary>
+        /// Where a matched file stands, or <see cref="CodeFileWriter.WriteState.Stale"/> when
+        /// the output for the class cannot be composed at all.
+        ///
+        /// Composing is arithmetic over what the environment returned and is not expected to
+        /// fail, but a mark is drawn for every class on every render, and one unlucky
+        /// registration must not take the list, the roll-ups and the status line with it.
+        /// Stale is the safe answer of the three: it is the one that sends somebody to press
+        /// Write, and the write reports what happened per class and by name.
+        /// </summary>
+        private CodeFileWriter.WriteState StateOf(PluginTypeInfo type, string code)
+        {
+            try
+            {
+                return CodeFileWriter.StateOf(code, type.ClassName, Remarks(type), Attributes(type));
+            }
+            catch (Exception)
+            {
+                return CodeFileWriter.WriteState.Stale;
+            }
+        }
+
+        /// <summary>
         /// An emitted block as a list, or null kept as null: null means "not this mode's
         /// concern" all the way down to the splice, and must survive being carried to a
         /// worker thread.
@@ -1176,7 +1217,20 @@ namespace PluginStepCodegen
                 }
 
                 sb.AppendLine("// " + type.TypeName);
-                foreach (var line in Remarks(type) ?? Attributes(type))
+
+                // One class that cannot be composed is said in its own place in the list,
+                // rather than emptying the pane of the dozens either side of it that can.
+                IEnumerable<string> block;
+                try
+                {
+                    block = Remarks(type) ?? Attributes(type);
+                }
+                catch (Exception ex)
+                {
+                    block = new[] { "// (nothing could be composed for this class: " + ex.Message + ")" };
+                }
+
+                foreach (var line in block)
                 {
                     sb.AppendLine(line);
                 }
@@ -1327,7 +1381,7 @@ namespace PluginStepCodegen
                     return;
 
                 default:
-                    var state = CodeFileWriter.StateOf(match.Code, type.ClassName, Remarks(type), Attributes(type));
+                    var state = StateOf(type, match.Code);
                     var file = Relative(_scan.Folder, match.File);
                     if (state == CodeFileWriter.WriteState.Stale)
                     {
@@ -1525,8 +1579,7 @@ namespace PluginStepCodegen
                 {
                     case MatchKind.Found:
                         matched++;
-                        if (CodeFileWriter.StateOf(match.Code, type.ClassName, Remarks(type), Attributes(type))
-                            == CodeFileWriter.WriteState.Stale)
+                        if (StateOf(type, match.Code) == CodeFileWriter.WriteState.Stale)
                         {
                             stale++;
                         }
@@ -1662,17 +1715,45 @@ namespace PluginStepCodegen
             // Both emitters are asked on this thread and the answers frozen, because they
             // read the mode radios and the experimental options: the work below runs on a
             // worker, where touching a control is not allowed.
-            var output = types.ToDictionary(t => t.Id, t => new ClassOutput
+            //
+            // A class whose output cannot be composed is carried over as the failure it is
+            // and thrown where the writer catches it, so it lands in the report's Failed
+            // section by name, beside the files that could not be written, rather than
+            // taking the batch and the tab with it.
+            var output = new Dictionary<Guid, ClassOutput>();
+            var unemitted = new Dictionary<Guid, string>();
+            foreach (var type in types)
             {
-                Remarks = Freeze(Remarks(t)),
-                Attributes = Freeze(Attributes(t))
-            });
+                try
+                {
+                    output[type.Id] = new ClassOutput
+                    {
+                        Remarks = Freeze(Remarks(type)),
+                        Attributes = Freeze(Attributes(type))
+                    };
+                }
+                catch (Exception ex)
+                {
+                    unemitted[type.Id] = ex.Message;
+                }
+            }
+
+            Func<PluginTypeInfo, ClassOutput> compose = t =>
+            {
+                string failure;
+                if (unemitted.TryGetValue(t.Id, out failure))
+                {
+                    throw new InvalidOperationException("nothing could be composed for this class: " + failure);
+                }
+
+                return output[t.Id];
+            };
 
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Writing " + types.Count + (types.Count == 1 ? " class..." : " classes..."),
                 Work = (worker, args) => args.Result = SourceWriter.Write(
-                    folder, types, writeAmbiguous, t => output[t.Id]),
+                    folder, types, writeAmbiguous, compose),
                 PostWorkCallBack = args =>
                 {
                     if (args.Error != null)
