@@ -30,20 +30,25 @@ namespace PluginStepCodegen.PerfHarness
     {
         private static int Main(string[] args)
         {
-            if (args.Length < 3)
-            {
-                Console.Error.WriteLine("usage: perfharness.exe <tree root> <source files> <registered classes>");
-                return 2;
-            }
-
-            var root = Path.GetFullPath(args[0]);
-            var sources = int.Parse(args[1], CultureInfo.InvariantCulture);
-            var classes = int.Parse(args[2], CultureInfo.InvariantCulture);
-
             try
             {
-                var tree = Tree.Generate(root, sources, classes);
-                Measure(tree);
+                if (args.Length == 2 && args[0] == "--measure")
+                {
+                    MeasureFolder(Path.GetFullPath(args[1]));
+                    return 0;
+                }
+
+                if (args.Length < 3)
+                {
+                    Console.Error.WriteLine("usage: perfharness.exe <tree root> <source files> <registered classes>");
+                    Console.Error.WriteLine("       perfharness.exe --measure <folder>");
+                    return 2;
+                }
+
+                Measure(Tree.Generate(
+                    Path.GetFullPath(args[0]),
+                    int.Parse(args[1], CultureInfo.InvariantCulture),
+                    int.Parse(args[2], CultureInfo.InvariantCulture)));
                 return 0;
             }
             catch (Exception ex)
@@ -51,6 +56,115 @@ namespace PluginStepCodegen.PerfHarness
                 Console.Error.WriteLine(ex);
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// The read-only half of the measurement, over a folder somebody already has. It
+        /// exists for the question this whole script was written to answer - why is *my*
+        /// project slow - which cannot be answered by a generated tree on another machine.
+        ///
+        /// Nothing is written, and the write phases are not run at all: pointing a timing
+        /// harness at a real repository must not be a thing you regret. The registrations
+        /// are stood in for by the plugin classes the folder itself declares, which is the
+        /// same list the tool would be holding it against, give or take what is registered.
+        /// </summary>
+        private static void MeasureFolder(string folder)
+        {
+            if (!Directory.Exists(folder))
+            {
+                throw new DirectoryNotFoundException("No folder at " + folder);
+            }
+
+            var read = 0L;
+            var count = 0;
+            var floor = Best(3, () =>
+            {
+                read = 0;
+                count = 0;
+                foreach (var file in CodeFileWriter.EnumerateSources(folder))
+                {
+                    read += File.ReadAllText(file).Length;
+                    count++;
+                }
+            });
+
+            Line("floor", floor, count + " files, " + (read / 1024) + " KB read");
+            Line("enumerate", Best(3, () => CodeFileWriter.EnumerateSources(folder).Count()),
+                "walking the tree, nothing read");
+
+            SourceIndex index = null;
+            var indexMs = Best(3, () => index = SourceIndex.Build(folder));
+            Line("index", indexMs, index.Files.Count + " files parsed, " + index.Declarations.Count() + " classes declared");
+
+            // Every plugin class the folder declares, by asking the scan itself with nothing
+            // registered: what comes back as "not registered" is the list.
+            var types = StandInRegistrations(index);
+            var names = new HashSet<string>(types.Select(t => t.ClassName));
+
+            FolderScan scan = null;
+            var scanMs = Best(3, () => scan = SourceScanner.Scan(folder, types, names));
+            Line("scan", scanMs,
+                scan.Matches.Values.Count(m => m.Kind == MatchKind.Found) + " matched, "
+                + scan.Matches.Values.Count(m => m.Kind == MatchKind.Ambiguous) + " ambiguous, "
+                + "standing in for " + types.Count + " registrations");
+
+            var renderMs = Best(3, () =>
+            {
+                foreach (var type in types)
+                {
+                    ClassMatch match;
+                    if (scan.Matches.TryGetValue(type.Id, out match) && match.Kind == MatchKind.Found)
+                    {
+                        CodeFileWriter.StateOf(match.Code, type.ClassName, null, AttributeEmitter.Emit(type));
+                        CodeFileWriter.StateOf(match.Code, type.ClassName, RemarksEmitter.Emit(type, null), null);
+                    }
+                }
+            });
+            Line("render", renderMs, "StateOf per class, both output modes");
+
+            var lookupMs = Best(3, () =>
+            {
+                foreach (var type in types)
+                {
+                    List<string> ambiguous;
+                    index.Find(type.ClassName, type.Namespace, out ambiguous);
+                }
+            });
+            Line("lookup", lookupMs, "which file declares each class, folder already read");
+        }
+
+        /// <summary>
+        /// The registrations a real folder would be held against, reconstructed from the
+        /// folder: a scan with nothing registered reports every plugin class as unregistered,
+        /// which is exactly that list.
+        /// </summary>
+        private static List<PluginTypeInfo> StandInRegistrations(SourceIndex index)
+        {
+            var empty = SourceScanner.Scan(index, new List<PluginTypeInfo>(), new HashSet<string>());
+            var namespaces = index.Files.ToDictionary(f => f.Path, f => f.Namespaces.FirstOrDefault());
+
+            return empty.Unregistered.Select(local =>
+            {
+                var ns = namespaces[local.File];
+                var type = new PluginTypeInfo
+                {
+                    Id = Guid.NewGuid(),
+                    TypeName = string.IsNullOrEmpty(ns) ? local.ClassName : ns + "." + local.ClassName
+                };
+
+                type.Steps.Add(new PluginStepInfo
+                {
+                    Id = Guid.NewGuid(),
+                    MessageName = "Update",
+                    PrimaryEntityName = "account",
+                    Stage = 40,
+                    Mode = 0,
+                    Rank = 1,
+                    Name = "Stand-in: Update of account"
+                });
+
+                return type;
+            }).ToList();
         }
 
         private static void Measure(Tree tree)

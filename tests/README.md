@@ -248,7 +248,14 @@ Everything above asks whether the answer is right. This asks what waiting for it
 .\perf.ps1 -Files 4000         # one size
 .\perf.ps1 -Classes 120        # a bigger registration
 .\perf.ps1 -Keep               # leave the generated trees for a profiler
+.\perf.ps1 -Folder C:\src\Mine # time a repository you already have, read only
 ```
+
+`-Folder` is the one to reach for when the tool feels slow on a project that cannot be
+shared: it times the real scan over that folder on that machine. It reads and writes
+nothing — the write phases are not run at all — and stands the registrations in with the
+plugin classes the folder itself declares, which is the list the tool would be holding it
+against anyway.
 
 The harness generates a repository rather than reusing `src\`: four projects, a dozen areas,
 a shared plugin base, ordinary code around the plugins, and a build's worth of output under

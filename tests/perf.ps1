@@ -26,6 +26,11 @@
       .\perf.ps1 -Classes 120        # a bigger registration
       .\perf.ps1 -SkipBuild          # reuse the last build
       .\perf.ps1 -Keep               # leave the generated trees for a profiler
+      .\perf.ps1 -Folder C:\src\Mine # time a repository you already have, read only
+
+    -Folder answers the question a generated tree cannot: why *this* project is slow. It
+    reads the folder and nothing else - no file is written and the write phases are not
+    run - and stands the registrations in with the plugin classes the folder declares.
 
     Trees are generated under tests\.perf and rebuilt on every run. The write phases
     change them, so each size is generated once and its phases run in order.
@@ -37,8 +42,9 @@
 #>
 [CmdletBinding()]
 param(
-    [int[]] $Files = @(250, 1000, 4000),
-    [int]   $Classes = 33,
+    [int[]]  $Files = @(250, 1000, 4000),
+    [int]    $Classes = 33,
+    [string] $Folder,
     [switch] $SkipBuild,
     [switch] $Keep
 )
@@ -86,34 +92,33 @@ function Format-Ms {
     if ($Ms -ge 1000) { '{0,7:N0} ms' -f $Ms } else { '{0,7:N1} ms' -f $Ms }
 }
 
-foreach ($size in $Files) {
-    $tree = Join-Path $work "tree-$size"
-    Write-Host ''
-    Write-Host "$size source files, $Classes registered classes" -ForegroundColor Cyan
-
-    $output = & $exe $tree $size $Classes
-    if ($LASTEXITCODE -ne 0) { throw "The harness failed for $size files:`n$($output -join [Environment]::NewLine)" }
+# One run of the harness, reported and judged. Which phases are judged is the caller's,
+# because a read-only run of somebody's own repository never reaches the write phases.
+function Show-Run {
+    param([string] $Label, [string[]] $Output, [int] $ClassCount, [string[]] $Judge)
 
     $phases = [ordered]@{}
-    foreach ($line in $output) {
+    foreach ($line in $Output) {
         $parts = $line -split "`t"
         if ($parts.Count -lt 3) { continue }
         $phases[$parts[0]] = [pscustomobject]@{ Ms = [double] $parts[1]; Note = $parts[2] }
     }
 
-    foreach ($required in @('floor') + ($budgets | ForEach-Object { $_.Phase })) {
+    foreach ($required in @('floor', 'enumerate') + $Judge) {
         if (-not $phases.Contains($required)) { throw "The harness printed no '$required' line." }
     }
 
     $floor = $phases['floor'].Ms
-    Write-Host ("  {0,-9} {1}          {2}" -f 'tree', (Format-Ms $phases['tree'].Ms), $phases['tree'].Note)
-    Write-Host ("  {0,-9} {1}          {2}" -f 'floor', (Format-Ms $floor), $phases['floor'].Note)
-    Write-Host ("  {0,-9} {1}          {2}" -f 'enumerate', (Format-Ms $phases['enumerate'].Ms), $phases['enumerate'].Note)
+    foreach ($name in @('tree', 'floor', 'enumerate', 'index')) {
+        if ($phases.Contains($name)) {
+            Write-Host ("  {0,-9} {1}          {2}" -f $name, (Format-Ms $phases[$name].Ms), $phases[$name].Note)
+        }
+    }
 
-    foreach ($budget in $budgets) {
+    foreach ($budget in $budgets | Where-Object { $Judge -contains $_.Phase }) {
         $phase = $phases[$budget.Phase]
         $ratio = if ($floor -gt 0) { $phase.Ms / $floor } else { 0 }
-        $allowed = $budget.Ratio * $floor + $budget.PerClass * $Classes
+        $allowed = $budget.Ratio * $floor + $budget.PerClass * $ClassCount
         $over  = @()
         if ($phase.Ms -gt $allowed) {
             $over += ('{0:N1} ms, allowed {1:N1} ms ({2:N1}x floor + {3:N1} ms per class)' -f
@@ -127,12 +132,38 @@ foreach ($size in $Files) {
         } else {
             Write-Host "$line" -ForegroundColor Red
             Write-Host ("             OVER BUDGET - " + ($over -join '; ') + " - " + $budget.What) -ForegroundColor Red
-            $script:failures += "$size files: $($budget.Phase) $($over -join '; ')"
+            $script:failures += "${Label}: $($budget.Phase) $($over -join '; ')"
         }
     }
 }
 
-if (-not $Keep -and (Test-Path $work)) { Remove-Item $work -Recurse -Force }
+if ($Folder) {
+    if (-not (Test-Path $Folder)) { throw "No folder at $Folder" }
+    $full = (Resolve-Path $Folder).Path
+
+    Write-Host ''
+    Write-Host "$full - read only, nothing is written" -ForegroundColor Cyan
+
+    $output = & $exe --measure $full
+    if ($LASTEXITCODE -ne 0) { throw "The harness failed:`n$($output -join [Environment]::NewLine)" }
+
+    # The stand-in count the harness reported, which is what the per-class budgets are per.
+    $standIns = if (($output -join "`n") -match 'standing in for (\d+) registrations') { [int] $Matches[1] } else { 0 }
+    Show-Run $full $output $standIns @('scan', 'render', 'lookup')
+} else {
+    foreach ($size in $Files) {
+        $tree = Join-Path $work "tree-$size"
+        Write-Host ''
+        Write-Host "$size source files, $Classes registered classes" -ForegroundColor Cyan
+
+        $output = & $exe $tree $size $Classes
+        if ($LASTEXITCODE -ne 0) { throw "The harness failed for $size files:`n$($output -join [Environment]::NewLine)" }
+
+        Show-Run "$size files" $output $Classes ($budgets | ForEach-Object { $_.Phase })
+    }
+
+    if (-not $Keep -and (Test-Path $work)) { Remove-Item $work -Recurse -Force }
+}
 
 Write-Host ''
 if ($script:failures.Count -gt 0) {
