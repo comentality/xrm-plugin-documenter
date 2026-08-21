@@ -22,6 +22,14 @@ namespace PluginStepCodegen
         private readonly Dictionary<Guid, List<PluginTypeInfo>> _typesByAssembly = new Dictionary<Guid, List<PluginTypeInfo>>();
 
         /// <summary>
+        /// Each stepped entity's current columns, fetched alongside its steps and kept for the
+        /// session. What lets the comment say "(all columns except ...)" instead of reciting
+        /// seventy names. Entities the fetch could not answer for are simply absent, and the
+        /// comment falls back to the plain list.
+        /// </summary>
+        private readonly Dictionary<string, EntityColumnsInfo> _columnsByEntity = new Dictionary<string, EntityColumnsInfo>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
         /// The assemblies being documented. Kept apart from the list, which shows only what the
         /// two switches and the filter box let through, and outlives all three.
         /// </summary>
@@ -41,6 +49,15 @@ namespace PluginStepCodegen
         /// <summary>Kept in fields because a control does not own the font it is handed.</summary>
         private readonly Font _listFont = new Font("Segoe UI", 9f);
         private readonly Font _codeFont = new Font("Consolas", 9f);
+        /// <summary>The wizard hat is a surrogate pair, and Segoe UI leaves those to font
+        /// linking, which on a Button can come back as boxes. Asking the emoji font by name
+        /// does not.</summary>
+        private readonly Font _emojiFont = new Font("Segoe UI Emoji", 11f);
+
+        /// <summary>Loaded before the UI is built, because the guru menu's check marks read from it.</summary>
+        private GuruSettings _guru = new GuruSettings();
+        private Button _btnGuru;
+        private ContextMenuStrip _guruMenu;
 
         private SplitContainer _mainSplit;
         private SplitContainer _leftSplit;
@@ -99,6 +116,12 @@ namespace PluginStepCodegen
 
         public PluginStepCodegenControl()
         {
+            GuruSettings loaded;
+            if (SettingsManager.Instance.TryLoad(typeof(PluginStepCodegenControl), out loaded) && loaded != null)
+            {
+                _guru = loaded;
+            }
+
             InitializeComponent();
         }
 
@@ -417,13 +440,14 @@ namespace PluginStepCodegen
             // Puts the code view away and hands its width to the source column, for the sessions
             // that are about auditing the marks rather than reading what would be written. At the
             // toolbar's right edge, against the pane it toggles.
+            // No Anchor on either button: inside the flow row an anchor across the flow
+            // direction makes the layout wrap, and the row itself is what hugs the right edge.
             _btnPreviewToggle = new Button
             {
                 Text = "Preview ▸",
                 Width = 78,
                 Height = 24,
-                Anchor = AnchorStyles.Right,
-                Margin = new Padding(12, 0, 0, 4)
+                Margin = new Padding(6, 0, 0, 4)
             };
             _btnPreviewToggle.Click += (s, e) =>
             {
@@ -432,11 +456,49 @@ namespace PluginStepCodegen
                 _btnPreviewToggle.Text = hide ? "◂ Preview" : "Preview ▸";
             };
 
+            // The wizard hat: guru settings, experiments running as opt-ins until they earn
+            // being the default. A menu rather than a dialog, because each one is a single
+            // check and the button should cost one click to inspect.
+            _btnGuru = new Button
+            {
+                Text = "🧙",
+                Width = 30,
+                Height = 24,
+                Margin = new Padding(12, 0, 0, 4),
+                Font = _emojiFont
+            };
+
+            var miAllColumnsExcept = new ToolStripMenuItem("Say near-complete column lists as \"(all columns except ...)\"")
+            {
+                CheckOnClick = true,
+                Checked = _guru.AllColumnsExcept,
+                ToolTipText = "Comment mode only. An image or filter covering nearly every column of its table\r\n"
+                              + "is written as the handful it leaves out, measured against the table's columns today."
+            };
+            miAllColumnsExcept.CheckedChanged += (s, e) =>
+            {
+                _guru.AllColumnsExcept = miAllColumnsExcept.Checked;
+                SettingsManager.Instance.Save(typeof(PluginStepCodegenControl), _guru);
+                // Staleness and the preview are both questions about the output, so this
+                // re-renders exactly the way a mode switch does.
+                RenderScan();
+            };
+
+            _guruMenu = new ContextMenuStrip { ShowImageMargin = false };
+            _guruMenu.Items.Add(new ToolStripMenuItem("Guru settings") { Enabled = false });
+            _guruMenu.Items.Add(new ToolStripSeparator());
+            _guruMenu.Items.Add(miAllColumnsExcept);
+            _btnGuru.Click += (s, e) => _guruMenu.Show(_btnGuru, new Point(0, _btnGuru.Height));
+
             var modeRow = Row(_rbAttributes, _rbComment);
             modeRow.Margin = new Padding(0, 0, 0, 4);
+            var cornerRow = Row(_btnGuru, _btnPreviewToggle);
+            cornerRow.Dock = DockStyle.None;
+            cornerRow.Anchor = AnchorStyles.Right;
+            cornerRow.WrapContents = false;
             _toolbar.Controls.Add(lblOutput, 0, 0);
             _toolbar.Controls.Add(modeRow, 1, 0);
-            _toolbar.Controls.Add(_btnPreviewToggle, 2, 0);
+            _toolbar.Controls.Add(cornerRow, 2, 0);
 
             _btnWrite = new Button { Text = "Write to Files", Width = 110, Height = 26, Enabled = false, Margin = new Padding(0, 0, 6, 0) };
             _btnWrite.Click += BtnWrite_Click;
@@ -561,6 +623,9 @@ namespace PluginStepCodegen
             {
                 _listFont.Dispose();
                 _codeFont.Dispose();
+                _emojiFont.Dispose();
+                // A ContextMenuStrip belongs to no Controls collection, so nothing else frees it.
+                if (_guruMenu != null) _guruMenu.Dispose();
             }
         }
 
@@ -665,6 +730,7 @@ namespace PluginStepCodegen
 
                     _assemblies = (List<AssemblyInfo>)result.Result;
                     _typesByAssembly.Clear();
+                    _columnsByEntity.Clear();
                     _checkedAssemblies.Clear();
                     _excludedTypes.Clear();
                     _btnRefresh.Enabled = true;
@@ -703,6 +769,9 @@ namespace PluginStepCodegen
                     var alive = new HashSet<Guid>(_assemblies.Select(a => a.Id));
                     _checkedAssemblies.RemoveWhere(id => !alive.Contains(id));
                     _typesByAssembly.Clear();
+                    // Columns move with the registrations - refresh is pressed after changing
+                    // things in the IDE, and a new column is exactly such a change.
+                    _columnsByEntity.Clear();
                     RenderAssemblies();
                     LoadCheckedTypes();
                 }
@@ -833,12 +902,43 @@ namespace PluginStepCodegen
                 return;
             }
 
+            // Snapshotted here because the worker must not read a dictionary the UI thread owns.
+            var knownEntities = new HashSet<string>(_columnsByEntity.Keys, StringComparer.OrdinalIgnoreCase);
+
             WorkAsync(new WorkAsyncInfo
             {
                 Message = missing.Count == 1
                     ? "Loading registered steps..."
                     : "Loading registered steps from " + missing.Count + " assemblies...",
-                Work = (worker, args) => { args.Result = RegistrationQuery.GetPluginTypes(Service, missing); },
+                Work = (worker, args) =>
+                {
+                    var types = RegistrationQuery.GetPluginTypes(Service, missing);
+
+                    var entities = types
+                        .SelectMany(t => t.Steps)
+                        .Select(s => s.PrimaryEntityName)
+                        .Where(e => !string.IsNullOrWhiteSpace(e)
+                                    && !string.Equals(e, "none", StringComparison.OrdinalIgnoreCase)
+                                    && !knownEntities.Contains(e))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    // The columns are garnish on the comment, never worth failing the load over.
+                    // Nothing is recorded on a miss, so the next load simply asks again.
+                    // Fetched even while the guru switch is off - one light request buys the
+                    // toggle working instantly on whatever is already loaded.
+                    Dictionary<string, EntityColumnsInfo> columns;
+                    try
+                    {
+                        columns = RegistrationQuery.GetEntityColumns(Service, entities);
+                    }
+                    catch
+                    {
+                        columns = new Dictionary<string, EntityColumnsInfo>();
+                    }
+
+                    args.Result = new KeyValuePair<List<PluginTypeInfo>, Dictionary<string, EntityColumnsInfo>>(types, columns);
+                },
                 PostWorkCallBack = result =>
                 {
                     if (result.Error != null)
@@ -847,7 +947,13 @@ namespace PluginStepCodegen
                         return;
                     }
 
-                    var loaded = ((List<PluginTypeInfo>)result.Result).ToLookup(t => t.AssemblyId);
+                    var fetched = (KeyValuePair<List<PluginTypeInfo>, Dictionary<string, EntityColumnsInfo>>)result.Result;
+                    foreach (var entry in fetched.Value)
+                    {
+                        _columnsByEntity[entry.Key] = entry.Value;
+                    }
+
+                    var loaded = fetched.Key.ToLookup(t => t.AssemblyId);
 
                     // Every assembly asked for is recorded, including the ones that turned out to
                     // have nothing registered, so unticking and reticking one does not ask again.
@@ -1005,7 +1111,11 @@ namespace PluginStepCodegen
         /// </summary>
         private IEnumerable<string> Remarks(PluginTypeInfo type)
         {
-            return _rbComment.Checked ? RemarksEmitter.Emit(type) : null;
+            // Without the guru switch the columns stay out of the call, and the comment reads
+            // exactly as it did before the option existed.
+            return _rbComment.Checked
+                ? RemarksEmitter.Emit(type, _guru.AllColumnsExcept ? _columnsByEntity : null)
+                : null;
         }
 
         private IEnumerable<string> Attributes(PluginTypeInfo type)

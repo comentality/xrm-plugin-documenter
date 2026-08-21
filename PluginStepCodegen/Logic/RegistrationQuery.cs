@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata.Query;
 using Microsoft.Xrm.Sdk.Query;
 
 namespace PluginStepCodegen.Logic
@@ -222,6 +224,69 @@ namespace PluginStepCodegen.Logic
                     },
                     GetLookupId(e, "sdkmessageprocessingstepid")))
                 .ToList();
+        }
+
+        /// <summary>
+        /// The current column list of each named entity, keyed by logical name, in one metadata
+        /// round trip that asks only for attribute names and one flag rather than the megabytes a
+        /// full <c>RetrieveEntityRequest</c> per entity would pull.
+        ///
+        /// Companion attributes - the <c>_name</c> and <c>yominame</c> shadows a lookup or a
+        /// picklist casts, <c>entityimage_url</c> and friends - are dropped by
+        /// <c>AttributeOf</c>, because no registration picker offers them and every one kept
+        /// would surface as a phantom "except".
+        ///
+        /// Every requested name gets an entry, empty for an entity the environment does not
+        /// know, so the caller can cache the answer and never ask twice.
+        /// </summary>
+        public static Dictionary<string, EntityColumnsInfo> GetEntityColumns(IOrganizationService service, ICollection<string> entityNames)
+        {
+            var result = new Dictionary<string, EntityColumnsInfo>(StringComparer.OrdinalIgnoreCase);
+            if (entityNames.Count == 0)
+            {
+                return result;
+            }
+
+            var query = new EntityQueryExpression
+            {
+                Criteria = new MetadataFilterExpression(LogicalOperator.And)
+                {
+                    Conditions =
+                    {
+                        new MetadataConditionExpression("LogicalName", MetadataConditionOperator.In, entityNames.ToArray())
+                    }
+                },
+                Properties = new MetadataPropertiesExpression("LogicalName", "Attributes"),
+                AttributeQuery = new AttributeQueryExpression
+                {
+                    Properties = new MetadataPropertiesExpression("LogicalName", "AttributeOf", "IsValidForUpdate")
+                }
+            };
+
+            var response = (RetrieveMetadataChangesResponse)service.Execute(new RetrieveMetadataChangesRequest { Query = query });
+            foreach (var entity in response.EntityMetadata)
+            {
+                var info = new EntityColumnsInfo();
+                foreach (var attribute in entity.Attributes
+                             .Where(a => a.AttributeOf == null)
+                             .OrderBy(a => a.LogicalName, StringComparer.Ordinal))
+                {
+                    info.ImageColumns.Add(attribute.LogicalName);
+                    if (attribute.IsValidForUpdate.GetValueOrDefault())
+                    {
+                        info.FilterColumns.Add(attribute.LogicalName);
+                    }
+                }
+
+                result[entity.LogicalName] = info;
+            }
+
+            foreach (var name in entityNames.Where(n => !result.ContainsKey(n)))
+            {
+                result[name] = new EntityColumnsInfo();
+            }
+
+            return result;
         }
 
         /// <summary>

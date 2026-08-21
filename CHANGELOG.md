@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **A near-complete column list can be said as its exceptions.** Switched on, the comment
+  mode measures each list against its entity's current columns, and an image or filter
+  that covers nearly all of them reads `(all columns except creditlimit, ilac_legacyid,
+  ...)` instead of reciting seventy names — used only while the exceptions stay at most a
+  quarter of what is included. A list that turns out to be every column reads `(all 75
+  columns, written out)`, distinct from `(all columns)`, because a spelled-out list is
+  pinned to the day it was made while an empty one follows the table. A list carrying a
+  column the entity no longer has is left verbatim, so the stale name stays visible.
+- **The wizard hat.** A 🧙 button in the write toolbar opens the guru settings:
+  experiments that run as opt-ins until they earn being the default. The exceptions
+  phrasing above is the first of them, off by default, remembered across sessions.
+
+  ![The wizard hat button beside the preview toggle](assets/changelog-guru-hat.png)
+
 - **A third column holds the source folder against the registrations.** The folder picker
   moved there from above the preview, and as soon as a folder and loaded classes exist the
   tool scans in the background and keeps a ledger: which registered classes have a `.cs`

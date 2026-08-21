@@ -13,6 +13,11 @@ namespace PluginStepCodegen.Logic
     /// Xrm Tools attribute model cannot express: a disabled step, and the user a step
     /// impersonates. Everything else is deliberately left out - step names, descriptions
     /// and configuration are noise when you are skimming.
+    ///
+    /// Given the entities' current columns, a list that covers nearly all of them is said
+    /// as its exceptions - "(all columns except ...)" - because with seventy names the
+    /// question a reader has is which five are not there. Without the columns every list
+    /// is rendered as written.
     /// </summary>
     public static class RemarksEmitter
     {
@@ -27,24 +32,38 @@ namespace PluginStepCodegen.Logic
         /// a remark about the list rather than as a name in it.</summary>
         private const string AllColumns = "(all columns)";
 
-        public static IEnumerable<string> Emit(PluginTypeInfo type)
+        public static IEnumerable<string> Emit(PluginTypeInfo type, IDictionary<string, EntityColumnsInfo> columnsByEntity = null)
         {
             var lines = new List<string> { "/// <remarks>", "/// " + Marker };
 
             foreach (var step in type.Steps)
             {
-                lines.AddRange(Compose(string.Empty, StepHeader(step), StepColumns(step)));
+                var entity = ColumnsOf(columnsByEntity, step.PrimaryEntityName);
+                lines.AddRange(Compose(string.Empty, StepHeader(step), StepColumns(step, entity)));
                 foreach (var image in step.Images)
                 {
                     // No attributes on an image means every column, which Microsoft
                     // explicitly calls out as bad practice. Worth saying out loud.
                     lines.AddRange(Compose("    ", ImageName(image.ImageType),
-                        string.IsNullOrWhiteSpace(image.Attributes) ? AllColumns : List(image.Attributes)));
+                        string.IsNullOrWhiteSpace(image.Attributes)
+                            ? AllColumns
+                            : Describe(image.Attributes, entity == null ? null : entity.ImageColumns)));
                 }
             }
 
             lines.Add("/// </remarks>");
             return lines;
+        }
+
+        private static EntityColumnsInfo ColumnsOf(IDictionary<string, EntityColumnsInfo> columnsByEntity, string entityName)
+        {
+            if (columnsByEntity == null || string.IsNullOrWhiteSpace(entityName))
+            {
+                return null;
+            }
+
+            EntityColumnsInfo info;
+            return columnsByEntity.TryGetValue(entityName, out info) ? info : null;
         }
 
         /// <summary>
@@ -83,18 +102,56 @@ namespace PluginStepCodegen.Logic
         /// the message though: Dataverse filters <c>Update</c> and <c>Create</c>, and on a
         /// <c>Delete</c> or a global message there is nothing to have filtered.
         /// </summary>
-        private static string StepColumns(PluginStepInfo step)
+        private static string StepColumns(PluginStepInfo step, EntityColumnsInfo entity)
         {
             var list = List(step.FilteringAttributes);
             if (list.Length > 0)
             {
-                return list;
+                return Describe(step.FilteringAttributes, entity == null ? null : entity.FilterColumns);
             }
 
             return string.Equals(step.MessageName, "Update", StringComparison.OrdinalIgnoreCase)
                    || string.Equals(step.MessageName, "Create", StringComparison.OrdinalIgnoreCase)
                 ? AllColumns
                 : string.Empty;
+        }
+
+        /// <summary>
+        /// The list as written, unless the entity's own columns show it is nearly all of them -
+        /// then the handful left out is the readable fact, and seventy names collapse to
+        /// "(all columns except ...)". A list that turns out to be every column is still not
+        /// called <see cref="AllColumns"/>: a registration with no list follows the table as it
+        /// grows, a spelled-out one is pinned to today, and the difference is worth a word.
+        /// </summary>
+        private static string Describe(string csv, List<string> universe)
+        {
+            var items = Items(csv);
+            var list = string.Join(", ", items);
+            if (items.Count == 0 || universe == null || universe.Count == 0)
+            {
+                return list;
+            }
+
+            // A column the entity no longer has is the most interesting thing a list can
+            // carry; folding it into an "except" would hide it, so such a list stays verbatim.
+            var known = new HashSet<string>(universe, StringComparer.OrdinalIgnoreCase);
+            if (!items.All(known.Contains))
+            {
+                return list;
+            }
+
+            var present = new HashSet<string>(items, StringComparer.OrdinalIgnoreCase);
+            var missing = universe.Where(c => !present.Contains(c)).ToList();
+            if (missing.Count == 0)
+            {
+                return "(all " + universe.Count + " columns, written out)";
+            }
+
+            // "Except" has to mean a handful, or the phrase lies about the coverage; past a
+            // quarter of what is included, the plain list says it straighter.
+            return missing.Count * 4 <= present.Count
+                ? "(all columns except " + string.Join(", ", missing) + ")"
+                : list;
         }
 
         /// <summary>
@@ -145,15 +202,21 @@ namespace PluginStepCodegen.Logic
         /// <summary>Stored comma separated with no spaces, which does not wrap or read well.</summary>
         private static string List(string value)
         {
+            return string.Join(", ", Items(value));
+        }
+
+        private static List<string> Items(string value)
+        {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return string.Empty;
+                return new List<string>();
             }
 
-            return string.Join(", ", value
+            return value
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(a => a.Trim())
-                .Where(a => a.Length > 0));
+                .Where(a => a.Length > 0)
+                .ToList();
         }
 
         private static string Stage(int stage)

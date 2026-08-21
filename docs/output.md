@@ -133,6 +133,34 @@ rather than a neutral default, and worth seeing in a diff.
 Messages that filter nothing — `Delete`, `Associate`, a custom action — keep their bare
 header, because there is no column list to have omitted.
 
+### `(all columns except ...)` — a guru setting, off by default
+
+Behind the 🧙 button in the write toolbar. Switched on, the tool measures each column list
+against its entity's current columns, and a list that covers nearly all of them is said as
+its exceptions:
+
+```csharp
+///     PreImage: (all columns except creditlimit, ilac_legacyid, overriddencreatedon)
+```
+
+With seventy names in a seventy-five column table, the question a reader has is which five
+are *not* there, so the handful left out is the readable fact. The phrase is only used
+while it stays honest — the exceptions must be at most a quarter of what is included —
+and the exceptions are the entity's columns *today*, so the line doubles as a to-do: a
+column added since the image was registered shows up in it.
+
+Two edges keep their own words:
+
+- A list that turns out to be every column reads `(all 75 columns, written out)` rather
+  than `(all columns)`, because the two registrations age differently: no list follows the
+  table as it grows, a spelled-out list is pinned to the day it was made.
+- A list carrying a column the entity no longer has is rendered verbatim — that stale name
+  is the most interesting thing in it, and an "except" would fold it away.
+
+When the columns could not be fetched, every list is rendered as written — as it always is
+while the setting is off. It starts as an opt-in so the phrasing can prove itself before it
+becomes the default; the choice is remembered across sessions.
+
 ### Wrapping
 
 Lines are held to 100 characters including the `///` and the indent. A column list that
