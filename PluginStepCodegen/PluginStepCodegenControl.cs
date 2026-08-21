@@ -49,11 +49,8 @@ namespace PluginStepCodegen
         /// <summary>Kept in fields because a control does not own the font it is handed.</summary>
         private readonly Font _listFont = new Font("Segoe UI", 9f);
         private readonly Font _codeFont = new Font("Consolas", 9f);
-        /// <summary>The wizard hat is a surrogate pair, and Segoe UI leaves those to font
-        /// linking, which on a Button can come back as boxes. Asking the emoji font by name
-        /// does not.</summary>
-        private readonly Font _emojiFont = new Font("Segoe UI Emoji", 11f);
-
+        /// <summary>A size up from the toolbar's own, so the dagger reads as a mark rather than a speck.</summary>
+        private readonly Font _guruFont = new Font("Segoe UI", 11f);
         /// <summary>Loaded before the UI is built, because the guru menu's check marks read from it.</summary>
         private GuruSettings _guru = new GuruSettings();
         private Button _btnGuru;
@@ -456,16 +453,17 @@ namespace PluginStepCodegen
                 _btnPreviewToggle.Text = hide ? "◂ Preview" : "Preview ▸";
             };
 
-            // The wizard hat: guru settings, experiments running as opt-ins until they earn
+            // The dagger: guru settings, experiments running as opt-ins until they earn
             // being the default. A menu rather than a dialog, because each one is a single
-            // check and the button should cost one click to inspect.
+            // check and the button should cost one click to inspect. The glyph is plain
+            // text, not emoji, so it draws in the toolbar's own font and colour.
             _btnGuru = new Button
             {
-                Text = "🧙",
+                Text = "†",
                 Width = 30,
                 Height = 24,
                 Margin = new Padding(12, 0, 0, 4),
-                Font = _emojiFont
+                Font = _guruFont
             };
 
             var miAllColumnsExcept = new ToolStripMenuItem("Say near-complete column lists as \"(all columns except ...)\"")
@@ -623,7 +621,7 @@ namespace PluginStepCodegen
             {
                 _listFont.Dispose();
                 _codeFont.Dispose();
-                _emojiFont.Dispose();
+                _guruFont.Dispose();
                 // A ContextMenuStrip belongs to no Controls collection, so nothing else frees it.
                 if (_guruMenu != null) _guruMenu.Dispose();
             }

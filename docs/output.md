@@ -135,7 +135,7 @@ header, because there is no column list to have omitted.
 
 ### `(all columns except ...)` — a guru setting, off by default
 
-Behind the 🧙 button in the write toolbar. Switched on, the tool measures each column list
+Behind the † button in the write toolbar. Switched on, the tool measures each column list
 against its entity's current columns, and a list that covers nearly all of them is said as
 its exceptions:
 

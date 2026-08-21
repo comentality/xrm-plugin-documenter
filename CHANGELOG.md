@@ -10,11 +10,11 @@
   columns, written out)`, distinct from `(all columns)`, because a spelled-out list is
   pinned to the day it was made while an empty one follows the table. A list carrying a
   column the entity no longer has is left verbatim, so the stale name stays visible.
-- **The wizard hat.** A 🧙 button in the write toolbar opens the guru settings:
-  experiments that run as opt-ins until they earn being the default. The exceptions
-  phrasing above is the first of them, off by default, remembered across sessions.
+- **The dagger.** A † button in the write toolbar opens the guru settings: experiments
+  that run as opt-ins until they earn being the default. The exceptions phrasing above is
+  the first of them, off by default, remembered across sessions.
 
-  ![The wizard hat button beside the preview toggle](assets/changelog-guru-hat.png)
+  ![The dagger button beside the preview toggle](assets/changelog-guru-dagger.png)
 
 - **A third column holds the source folder against the registrations.** The folder picker
   moved there from above the preview, and as soon as a folder and loaded classes exist the
