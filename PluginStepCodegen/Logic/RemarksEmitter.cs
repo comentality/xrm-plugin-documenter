@@ -36,7 +36,7 @@ namespace PluginStepCodegen.Logic
         {
             var lines = new List<string> { "/// <remarks>", "/// " + Marker };
 
-            foreach (var step in type.Steps)
+            foreach (var step in ByTable(type.Steps))
             {
                 var entity = ColumnsOf(columnsByEntity, step.PrimaryEntityName);
                 lines.AddRange(Compose(string.Empty, StepHeader(step), StepColumns(step, entity)));
@@ -53,6 +53,27 @@ namespace PluginStepCodegen.Logic
 
             lines.Add("/// </remarks>");
             return lines;
+        }
+
+        /// <summary>
+        /// The steps as they were given, regrouped so a table's registrations sit together,
+        /// tables in alphabetical order. A generic plugin - one class registered against a
+        /// dozen tables to stamp the same column on all of them - is what this is for: in
+        /// execution order its steps interleave every table with every other, and there is
+        /// nothing being read in that arrangement, because steps on different tables never
+        /// run against each other.
+        ///
+        /// Only the comment does this. The attributes are what Xrm Tools reads back, and
+        /// they stay in the order they run in, images bound to the step above them.
+        ///
+        /// The sort is stable, so within one table the execution order it arrived in is
+        /// exactly what comes out. A step on a global message has no table and goes last.
+        /// </summary>
+        private static IEnumerable<PluginStepInfo> ByTable(IEnumerable<PluginStepInfo> steps)
+        {
+            return steps
+                .OrderBy(s => s.HasEntity ? 0 : 1)
+                .ThenBy(s => s.PrimaryEntityName, StringComparer.OrdinalIgnoreCase);
         }
 
         private static EntityColumnsInfo ColumnsOf(IDictionary<string, EntityColumnsInfo> columnsByEntity, string entityName)

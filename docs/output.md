@@ -4,15 +4,10 @@ Two shapes, chosen with the **Write** toggle. They are independent: each replace
 own block, so switching modes never deletes the other one's work, and a class can carry
 both.
 
-Steps are grouped by table, tables in alphabetical order, and within one table they are
-ordered the way they run — stage, then execution order, then message name.
-
-A generic plugin — one class registered against a dozen tables to stamp the same column on
-all of them — is what decides that. Ordering the whole block by stage interleaves every
-table with every other, and buys nothing: steps on different tables never run against each
-other, so there is no execution order between them to preserve. Within a table there is,
-and that is where it is kept. Steps on a global message have no table to group under and
-come last.
+Steps are read in execution order — stage, then execution order, then message name, and
+the table only as a last tiebreak. The attributes are written in exactly that order,
+because it is part of what Xrm Tools reads back. The summary comment, which nothing reads
+back, regroups the same steps one table at a time.
 
 ## Xrm Tools attributes
 
@@ -39,7 +34,8 @@ see [Attribute definitions file](attribute-definitions.md) for what has to be in
 project for that.
 
 **Attribute order is load bearing.** `[Image]` binds to the nearest preceding `[Step]`, so
-every step is written with its own images following it. Do not sort them.
+steps are written in execution order with their own images following them. Do not sort
+them.
 
 ### The style
 
@@ -112,6 +108,27 @@ public partial class CourseHistoryHandler : IPlugin
 
 Each step is one line: mode, stage, message, entity, then the facts in brackets, then the
 columns after the colon. Images follow their step, indented, pre before post.
+
+### One table at a time
+
+Unlike the attributes, the comment is **grouped by table**, tables in alphabetical order,
+each keeping the execution order its own steps run in.
+
+A generic plugin decides this — one class registered against a dozen tables to stamp the
+same column on all of them. In execution order its steps interleave every table with every
+other, and nothing is being read in that arrangement: steps on different tables never run
+against each other, so there is no order between them to preserve. Within a table there
+is, and that is where it is kept. A step on a global message has no table and goes last.
+
+```csharp
+/// Sync Post-Create of account (order 1): (all columns)
+/// Sync Post-Update of account (order 1): (all columns)
+/// Sync Pre-Update of annotation (order 1): (all columns)
+/// Sync Post-Create of annotation (order 1): (all columns)
+```
+
+The attributes for the same registration stay interleaved, `Pre-Update of annotation`
+first, because that is the order they run in.
 
 Deliberately not a second serialisation. Step names, descriptions and configuration are
 left out as noise; the unlabelled list after the colon is the step's filtering attributes,

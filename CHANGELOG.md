@@ -2,19 +2,23 @@
 
 ## Unreleased
 
-- **Steps are grouped by table.** A generic plugin — one class registered against a dozen
-  tables to stamp the same column on all of them — used to come out interleaved, every
-  table's steps scattered through the block by stage. Tables now come out alphabetically
-  with their own steps together, and stage, execution order and message name order the
-  steps *within* a table, where the sequence actually means something. Steps on a global
-  message have no table to group under and go last.
+- **The summary comment is grouped by table.** A generic plugin — one class registered
+  against a dozen tables to stamp the same column on all of them — used to read as one
+  interleaved list, every table's steps scattered through it by stage. The comment now
+  takes a table at a time, tables alphabetically, keeping the order each table's own steps
+  run in; a step on a global message goes last.
 
   ```csharp
-  [Step("Create", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
-  [Step("Update", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
-  [Step("Update", "annotation", Stages.PreOperation, ExecutionMode.Synchronous)]
-  [Step("Create", "annotation", Stages.PostOperation, ExecutionMode.Synchronous)]
+  /// Sync Post-Create of account (order 1): (all columns)
+  /// Sync Post-Update of account (order 1): (all columns)
+  /// Sync Pre-Update of annotation (order 1): (all columns)
+  /// Sync Post-Create of annotation (order 1): (all columns)
   ```
+
+  **The attributes are unchanged** and stay in execution order: that is the order Xrm Tools
+  reads them back in. The one thing that did change there is a tiebreak — steps tying on
+  stage, rank *and* message name are now ordered by table rather than by whatever the query
+  returned, so the same registration writes the same file twice running.
 
 - `XrmToolsMetaAttributes.cs` gains `Stages.DepecratedPostOperation = 50` — upstream's
   spelling, upstream's `[Obsolete]` — which it had been missing. Nothing the tool writes

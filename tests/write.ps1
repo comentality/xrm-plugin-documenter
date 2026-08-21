@@ -148,9 +148,11 @@ function ConvertTo-EmitterColumns {
 }
 
 # ------------------------------------------------- registrations.psd1 -> the tool's model
-# Mirrors RegistrationQuery: only types with steps, types by name, steps by table and then
-# by stage, rank and message within it, steps on a global message last; a step keeps the
-# name Dataverse generated unless the fixture typed one.
+# Mirrors RegistrationQuery: only types with steps, types by name, steps in execution order
+# - stage, rank, message, and the table as the last tiebreak; a step keeps the name
+# Dataverse generated unless the fixture typed one. Regrouping by table is the summary
+# comment's own doing, further down, and this must not do it here or the comment's order
+# would be pinned against an order the tool never sees.
 function Get-TypeModels {
     param([hashtable] $Assembly)
 
@@ -169,10 +171,7 @@ function Get-TypeModels {
         $type.FriendlyName = Get-FriendlyName $Assembly $t.Name
         if ($t.ContainsKey('Description')) { $type.Description = $t.Description }
 
-        $ordered = $steps | Sort-Object `
-            { if ($_.ContainsKey('Entity')) { 0 } else { 1 } },
-            { Get-StepEntity $_ },
-            { $_.Stage }, { $_.Rank }, { $_.Message }
+        $ordered = $steps | Sort-Object { $_.Stage }, { $_.Rank }, { $_.Message }, { Get-StepEntity $_ }
 
         foreach ($s in $ordered) {
             $step = New-Object PluginStepCodegen.Logic.PluginStepInfo
@@ -306,19 +305,19 @@ $a2 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
 Check 'attributes again: all seventeen already up to date' `
     (@($a2.Unchanged).Count -eq 17 -and @($a2.Updated).Count -eq 0) "($(Format-Report $a2))"
 
-# --- The generic plugin: five tables, ten steps, grouped by table rather than by stage.
-# Read in attribute mode, before the comment run rewrites the file.
+# --- The generic plugin: five tables, ten steps, and the two orders they come out in.
+# The attributes are what Xrm Tools reads back, so they stay in execution order however
+# it interleaves the tables. Read now, before the comment run rewrites the file.
 $stamper = Get-Content (Join-Path $sandboxA 'TestPlugins\Plugins\StatusDateStamper.cs') -Raw
 $stamperSteps = @([regex]::Matches($stamper, '\[Step\("(?<message>\w+)", "(?<entity>\w+)"') |
     ForEach-Object { "$($_.Groups['entity'].Value)/$($_.Groups['message'].Value)" })
 $expectedStamper = @(
-    'account/Create', 'account/Update'
-    'annotation/Update', 'annotation/Create'   # PreOperation before PostOperation
-    'contact/Create', 'contact/Update'         # rank 1 before rank 2
-    'email/Create', 'email/Update'
-    'task/Create', 'task/Update'
+    'annotation/Update'                          # the only PreOperation step
+    'account/Create', 'annotation/Create', 'contact/Create', 'email/Create', 'task/Create'
+    'account/Update', 'email/Update', 'task/Update'
+    'contact/Update'                             # rank 2, so last
 )
-Check 'the generic plugin is grouped by table, alphabetically' `
+Check 'the attributes stay in execution order, tables interleaved' `
     (($stamperSteps -join ' ') -eq ($expectedStamper -join ' ')) "(got $($stamperSteps -join ' '))"
 
 $a3 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
@@ -328,13 +327,30 @@ $a4 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
 Check 'comment again: all seventeen already up to date' `
     (@($a4.Unchanged).Count -eq 17 -and @($a4.Updated).Count -eq 0) "($(Format-Report $a4))"
 
-# The comment orders the same steps the same way, off the same list.
+# The same ten steps, off the same list, in the order the comment reads them: by table,
+# alphabetically, each table keeping the execution order it arrived in - which is why
+# annotation reads update before create.
 Test-FileContains $sandboxA 'TestPlugins\Plugins\StatusDateStamper.cs' `
     '/// Sync Post-Create of account (order 1): (all columns)'
 $stamperComment = Get-Content (Join-Path $sandboxA 'TestPlugins\Plugins\StatusDateStamper.cs') -Raw
-Check 'the comment groups by table too' `
-    ($stamperComment.IndexOf('Pre-Update of annotation') -lt $stamperComment.IndexOf('Post-Create of annotation') -and
-     $stamperComment.IndexOf('Post-Update of account') -lt $stamperComment.IndexOf('Pre-Update of annotation'))
+$commentSteps = @([regex]::Matches($stamperComment, '///\s+(?:Sync|Async) \w+-(?<message>\w+) of (?<entity>\w+)') |
+    ForEach-Object { "$($_.Groups['entity'].Value)/$($_.Groups['message'].Value)" })
+$expectedComment = @(
+    'account/Create', 'account/Update'
+    'annotation/Update', 'annotation/Create'   # PreOperation before PostOperation
+    'contact/Create', 'contact/Update'         # rank 1 before rank 2
+    'email/Create', 'email/Update'
+    'task/Create', 'task/Update'
+)
+Check 'the comment regroups the same steps by table' `
+    (($commentSteps -join ' ') -eq ($expectedComment -join ' ')) "(got $($commentSteps -join ' '))"
+
+# The attributes written by the earlier run are still in the file and still in their own
+# order: the two modes are independent, and regrouping is only one of them doing it.
+$stamperStill = @([regex]::Matches($stamperComment, '\[Step\("(?<message>\w+)", "(?<entity>\w+)"') |
+    ForEach-Object { "$($_.Groups['entity'].Value)/$($_.Groups['message'].Value)" })
+Check 'writing the comment left the attribute order alone' `
+    (($stamperStill -join ' ') -eq ($expectedStamper -join ' ')) "(got $($stamperStill -join ' '))"
 
 # A step with no table to group under still emits both ways: the entity is what the
 # ordering now keys on, and a global message has none.

@@ -170,7 +170,8 @@
                 # experiment has to tell apart.
                 @{ Id = '0f'; Name = 'TestPlugins.NearlyAllColumns' }
                 # One class, five tables, a create and an update on each: the generic
-                # plugin, and the reason steps are grouped by table rather than by stage.
+                # plugin, and the only class whose two output modes are in different
+                # orders - attributes as they run, the comment a table at a time.
                 @{ Id = '10'; Name = 'TestPlugins.StatusDateStamper'
                    Description = 'Stamps the status date on whatever it is registered against.' }
             )
@@ -347,11 +348,12 @@
 
                 # --- The generic plugin: the same pair of steps on five tables, registered
                 # --- in no order at all, so what comes back is whatever the tool sorted.
-                # Read the emitted block and the tables have to appear alphabetically -
-                # account, annotation, contact, email, task - each carrying its own two
-                # steps together. Every step here is deliberately plain: no filter, no
-                # name, no description, because what this fixture is about is the order
-                # ten of them come out in and nothing else.
+                # In attribute mode they come out as they run, tables interleaved; in
+                # comment mode the tables are regrouped alphabetically - account,
+                # annotation, contact, email, task - each carrying its own two steps
+                # together. Every step here is deliberately plain: no filter, no name, no
+                # description, because what this fixture is about is the order ten of them
+                # come out in and nothing else.
                 @{
                     Id = '18'; Type = 'TestPlugins.StatusDateStamper'
                     Message = 'Update'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 1
@@ -370,10 +372,11 @@
                     Id = '1b'; Type = 'TestPlugins.StatusDateStamper'
                     Message = 'Update'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 2
                 }
-                # The one table whose two steps run in the order message names would not
-                # give: PostOperation on create, PreOperation on update, so the update is
-                # written first. A table's steps keep running order; only the tables
-                # themselves are alphabetical.
+                # Half of the one table whose two steps run in the order message names
+                # would not give: PostOperation on create, PreOperation on update, so the
+                # update comes first in both modes. Regrouping is a stable sort - a table
+                # keeps the order its own steps run in - and only a pair like this can
+                # tell that apart from sorting the whole block by table and message.
                 @{
                     Id = '1c'; Type = 'TestPlugins.StatusDateStamper'
                     Message = 'Create'; Entity = 'annotation'; Stage = 40; Mode = 0; Rank = 1

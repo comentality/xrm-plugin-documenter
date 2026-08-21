@@ -494,35 +494,35 @@ limit is the line width.
 
 ### StatusDateStamper
 
-The generic plugin: one class, five tables, a create and an update on each. A plugin
-repository has far more of these than it has one-table plugins - the same column stamped
-wherever the class is registered - and it is the shape that decides how steps are ordered.
-Ten steps sorted by stage alone interleave five tables into a list nobody can read, and
-buy nothing doing it: steps on different tables never run against each other.
+The generic plugin: one class, five tables, a create and an update on each, registered
+scrambled. A plugin repository has far more of these than it has one-table plugins - the
+same column stamped wherever the class is registered - and it is the one class here whose
+two output modes are in **different orders**, which is the whole reason it exists.
 
-So the tables come out **alphabetically**, and within a table the steps keep the order
-they run in. Registered scrambled, like `WideRegistration`, and each table pins a
-different tiebreak:
-
-- `annotation` reads update-then-create, because its update is `PreOperation` and its
-  create `PostOperation`. This is the one that would break if the block were sorted by
-  message name rather than grouped by table.
-- `account` ties on both stage and rank, so the message name separates the two.
-- `contact` is separated by rank alone.
+The attributes are in execution order, tables interleaved, because that order is part of
+what Xrm Tools reads back and is not ours to rearrange. Ten steps, one `PreOperation`,
+five creates and three updates tied on stage and rank, and one update at rank 2:
 
 ```csharp
 [Plugin(Description = "Stamps the status date on whatever it is registered against.")]
-[Step("Create", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
-[Step("Update", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
 [Step("Update", "annotation", Stages.PreOperation, ExecutionMode.Synchronous)]
+[Step("Create", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
 [Step("Create", "annotation", Stages.PostOperation, ExecutionMode.Synchronous)]
 [Step("Create", "contact", Stages.PostOperation, ExecutionMode.Synchronous)]
-[Step("Update", "contact", Stages.PostOperation, ExecutionMode.Synchronous, ExecutionOrder = 2)]
 [Step("Create", "email", Stages.PostOperation, ExecutionMode.Synchronous)]
-[Step("Update", "email", Stages.PostOperation, ExecutionMode.Synchronous)]
 [Step("Create", "task", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "account", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "email", Stages.PostOperation, ExecutionMode.Synchronous)]
 [Step("Update", "task", Stages.PostOperation, ExecutionMode.Synchronous)]
+[Step("Update", "contact", Stages.PostOperation, ExecutionMode.Synchronous, ExecutionOrder = 2)]
 ```
+
+Five steps tie on stage, rank *and* message name there, which is what the table being the
+last tiebreak is for: without it their order would be whatever the query happened to
+return, and there would be nothing here to pin.
+
+The comment regroups exactly the same list one table at a time, tables alphabetically:
+
 ```csharp
 /// Sync Post-Create of account (order 1): (all columns)
 /// Sync Post-Update of account (order 1): (all columns)
@@ -536,8 +536,17 @@ different tiebreak:
 /// Sync Post-Update of task (order 1): (all columns)
 ```
 
-`GlobalMessageHandler` is the other side of the same rule: a step on a global message has
-no table to group under, and goes last.
+`annotation` is the load bearing table: its update runs at `PreOperation` and its create at
+`PostOperation`, so the pair reads update-then-create. The regrouping is a stable sort, not
+a re-sort - each table keeps the order its own steps run in - and only a fixture whose
+message names disagree with its stages can tell the two apart. `contact`'s pair is kept in
+order by rank alone, and `account`'s by message name.
+
+Writing one mode must not disturb the other: run attributes then comment over the same
+file and both blocks are present, each in its own order.
+
+`GlobalMessageHandler` is the edge of the same rule: a step on a global message has no
+table to group under, and goes last.
 
 ### NearlyAllColumns
 
@@ -566,8 +575,9 @@ below is the live count of task's updatable columns (10 in the headless stand-in
 /// Sync Post-Update of task (order 2): (all N columns, written out)
 ```
 
-Three tables, so the block is in table order and the ranks read 1, 3, 2 — which is what
-grouping by table looks like when the ranks were assigned across one.
+Three tables, so the comment is in table order and the ranks read 1, 3, 2 — which is what
+grouping by table looks like when the ranks were assigned across one. In attribute mode
+the same three steps stay in rank order, 1, 2, 3.
 
 With it off — the default — the annotation and task steps and the image are recited
 exactly as registered, wrapping like WideRegistration's. Attribute mode always writes the literal
