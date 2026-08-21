@@ -113,6 +113,89 @@ function Get-StepValue {
     if ($Step.ContainsKey($Key)) { $Step[$Key] } else { $Default }
 }
 
+<#
+    The dynamic column lists. A step that wants "every updatable column of the table but
+    these two" cannot say so as a literal - the list depends on the environment - so the
+    matrix spells the intent (FilterAll, FilterAllExcept, AttributesAllExcept) and the
+    caller supplies the columns to expand against: the live table when registering and
+    verifying, a declared stand-in when write.ps1 runs headlessly.
+
+    $Columns maps an entity's logical name to @{ Filter = [string[]]; Image = [string[]] },
+    split the way the tool splits them in RegistrationQuery.GetEntityColumns: Image is
+    every real column (companion attributes already dropped), Filter the updatable subset.
+#>
+function Get-EntityColumnList {
+    param([hashtable] $Columns, [string] $Entity, [string] $View, [string] $Context)
+
+    if ($null -eq $Columns -or -not $Columns.ContainsKey($Entity)) {
+        throw "$Context expands against the columns of '$Entity', which were not provided. " +
+            'Only the unmanaged route and write.ps1 supply them; the solution route cannot carry a dynamic list.'
+    }
+    , @($Columns[$Entity][$View])
+}
+
+function Expand-ColumnList {
+    param([string[]] $Universe, [string[]] $Except, [string] $Context)
+
+    foreach ($name in $Except) {
+        # An except that is not in the universe would not shorten the list, it would
+        # change its meaning - and the fixture's whole claim is that the exceptions are
+        # exactly these. Refuse rather than register something else.
+        if ($Universe -notcontains $name) {
+            throw "$Context excepts '$name', which is not in the column list it expands against."
+        }
+    }
+    (@($Universe | Where-Object { $Except -notcontains $_ })) -join ','
+}
+
+# A step's filtering attributes: the literal Filter unless the step spells one of the two
+# dynamic forms, which expand against the entity's updatable columns.
+function Get-StepFilter {
+    param([hashtable] $Step, [hashtable] $Columns = $null)
+
+    $except = $null
+    if ([bool](Get-StepValue $Step 'FilterAll' $false)) { $except = @() }
+    if ($Step.ContainsKey('FilterAllExcept')) {
+        $except = @($Step.FilterAllExcept -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+    if ($null -eq $except) {
+        return Get-StepValue $Step 'Filter' $null
+    }
+
+    $context = "Step $($Step.Id) ($($Step.Type))"
+    $universe = Get-EntityColumnList $Columns (Get-StepEntity $Step) 'Filter' $context
+    Expand-ColumnList $universe $except $context
+}
+
+# An image's attributes: the literal list unless it says AttributesAllExcept, which
+# expands against every real column of the step's entity - an image can carry the
+# read-only ones a filter cannot.
+function Get-ImageAttributes {
+    param([hashtable] $Step, [hashtable] $Image, [hashtable] $Columns = $null)
+
+    if (-not $Image.ContainsKey('AttributesAllExcept')) {
+        return Get-StepValue $Image 'Attributes' $null
+    }
+
+    $except = @($Image.AttributesAllExcept -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $context = "Image $($Image.Name) on step $($Step.Id) ($($Step.Type))"
+    $universe = Get-EntityColumnList $Columns (Get-StepEntity $Step) 'Image' $context
+    Expand-ColumnList $universe $except $context
+}
+
+# The entities whose current columns are needed before the matrix can be written or
+# checked: any entity a step or image expands a dynamic list against.
+function Get-DynamicColumnEntities {
+    param([hashtable] $Manifest)
+
+    $entities = @(foreach ($entry in Get-AllSteps $Manifest) {
+        $dynamic = $entry.Step.ContainsKey('FilterAll') -or $entry.Step.ContainsKey('FilterAllExcept') -or
+            @(Get-StepImages $entry.Step | Where-Object { $_.ContainsKey('AttributesAllExcept') }).Count -gt 0
+        if ($dynamic) { Get-StepEntity $entry.Step }
+    })
+    , @($entities | Sort-Object -Unique)
+}
+
 # Every step of every assembly, each paired with the assembly it belongs to, so the
 # scripts that do not care which assembly a step came from can say so.
 function Get-AllSteps {

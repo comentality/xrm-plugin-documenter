@@ -14,7 +14,7 @@
     which is whoever register.ps1 was signed in as; a stand-in name goes through the same
     plumbing.
 
-    Two scenarios, matching the write reports in README.md:
+    Three scenarios, matching the write reports in README.md:
 
       A. The default list - the two unmanaged assemblies - written in attribute mode
          twice and comment mode twice. Everything resolves to a file, the second pass of
@@ -23,6 +23,11 @@
       B. All six assemblies. Bravo and Ghost have no source, Twin is written once per
          assembly and cannot settle, and nothing is ambiguous: the short names Duplicate
          and Rival match two files each, and the registered namespace picks the right one.
+
+      C. The default list in comment mode with the experimental "(all columns except...)"
+         rendering on: the emitter is handed the stand-in column universes the tool would
+         have fetched, and NearlyAllColumns collapses to its exceptions while every other
+         list stays exactly as it reads in scenario A.
 
     Sandboxes live under tests\obj\write and are rebuilt on every run.
 #>
@@ -79,6 +84,69 @@ function Get-SourceHashes {
     $hashes
 }
 
+# --------------------------------------------------------- the stand-in column universes
+# The dynamic filters expand against the live table when register.ps1 writes them; here
+# they expand against these, the same way the impersonating user's name is a stand-in.
+# Each is a plausible slice of the real table, sized so that every literal list in the
+# matrix stays on the same side of the quarter rule it is on in a real environment - the
+# WideRegistration ten names are a minority of account's columns here too.
+function New-StandInColumns {
+    param([string[]] $Updatable, [string[]] $ReadOnly)
+
+    $filter = @($Updatable)
+    [Array]::Sort($filter, [StringComparer]::Ordinal)
+    $image = @($Updatable + $ReadOnly)
+    [Array]::Sort($image, [StringComparer]::Ordinal)
+    @{ Filter = $filter; Image = $image }
+}
+
+$standInColumns = @{
+    account = New-StandInColumns -ReadOnly @(
+        'accountid', 'createdby', 'createdon', 'modifiedby', 'modifiedon'
+    ) -Updatable @(
+        'accountcategorycode', 'accountnumber', 'accountratingcode', 'address1_city',
+        'address1_country', 'address1_line1', 'address1_line2', 'address1_postalcode',
+        'address1_stateorprovince', 'creditlimit', 'customersizecode', 'description',
+        'emailaddress1', 'fax', 'industrycode', 'name', 'numberofemployees', 'ownerid',
+        'ownershipcode', 'parentaccountid', 'revenue', 'sic', 'telephone1',
+        'tickersymbol', 'websiteurl'
+    )
+    annotation = New-StandInColumns -ReadOnly @(
+        'annotationid', 'createdby', 'createdon', 'modifiedby', 'modifiedon'
+    ) -Updatable @(
+        'documentbody', 'filename', 'isdocument', 'langid', 'mimetype', 'notetext',
+        'objectid', 'objecttypecode', 'ownerid', 'subject'
+    )
+    contact = New-StandInColumns -ReadOnly @(
+        'contactid', 'createdby', 'createdon', 'modifiedby', 'modifiedon'
+    ) -Updatable @(
+        'assistantname', 'description', 'emailaddress1', 'firstname', 'jobtitle',
+        'lastname', 'middlename', 'mobilephone', 'ownerid', 'parentcustomerid',
+        'salutation', 'telephone1'
+    )
+    task = New-StandInColumns -ReadOnly @(
+        'activityid', 'createdby', 'createdon', 'modifiedby', 'modifiedon'
+    ) -Updatable @(
+        'actualdurationminutes', 'category', 'description', 'ownerid', 'prioritycode',
+        'regardingobjectid', 'scheduledend', 'scheduledstart', 'subcategory', 'subject'
+    )
+}
+
+# The same universes in the shape RemarksEmitter takes, for the run that hands the
+# emitter the columns the tool would have fetched.
+function ConvertTo-EmitterColumns {
+    param([hashtable] $StandIn)
+
+    $dictionary = New-Object 'System.Collections.Generic.Dictionary[string,PluginStepCodegen.Logic.EntityColumnsInfo]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($entity in $StandIn.Keys) {
+        $info = New-Object PluginStepCodegen.Logic.EntityColumnsInfo
+        foreach ($column in $StandIn[$entity].Image) { $info.ImageColumns.Add($column) }
+        foreach ($column in $StandIn[$entity].Filter) { $info.FilterColumns.Add($column) }
+        $dictionary[$entity] = $info
+    }
+    , $dictionary
+}
+
 # ------------------------------------------------- registrations.psd1 -> the tool's model
 # Mirrors RegistrationQuery: only types with steps, types by name, steps by stage, rank,
 # message; a step keeps the name Dataverse generated unless the fixture typed one.
@@ -109,7 +177,7 @@ function Get-TypeModels {
             $step.Mode = $s.Mode
             $step.Rank = $s.Rank
             $step.Name = Get-StepName $s
-            $step.FilteringAttributes = Get-StepValue $s 'Filter' $null
+            $step.FilteringAttributes = Get-StepFilter $s $standInColumns
             $step.Configuration = Get-StepValue $s 'Configuration' $null
             $step.AsyncAutoDelete = [bool](Get-StepValue $s 'AsyncAutoDelete' $false)
             $step.IsDisabled = [bool](Get-StepValue $s 'Disabled' $false)
@@ -125,7 +193,7 @@ function Get-TypeModels {
                 $image.ImageType = $i.Type
                 $image.EntityAlias = $i.Alias
                 $image.Name = $i.Name
-                $image.Attributes = Get-StepValue $i 'Attributes' $null
+                $image.Attributes = Get-ImageAttributes $s $i $standInColumns
                 $image.MessagePropertyName = Get-StepValue $i 'Property' 'Target'
                 $step.Images.Add($image)
             }
@@ -149,7 +217,7 @@ function Get-CheckedTypes {
 # --------------------------------------------------------------------- one Write press
 # The same loop as BtnWrite_Click: find the file, skip or write, tally what happened.
 function Invoke-WriteRun {
-    param([string] $Folder, $Types, [ValidateSet('Attributes', 'Comment')] [string] $Mode)
+    param([string] $Folder, $Types, [ValidateSet('Attributes', 'Comment')] [string] $Mode, $Columns = $null)
 
     $r = [ordered]@{ Updated = @(); Unchanged = @(); NotFound = @(); Ambiguous = @(); Failed = @() }
     foreach ($type in $Types) {
@@ -166,7 +234,7 @@ function Invoke-WriteRun {
             # does not bind to the IEnumerable<string> parameters below.
             $remarks = $null
             $attributes = $null
-            if ($Mode -eq 'Comment') { $remarks = [PluginStepCodegen.Logic.RemarksEmitter]::Emit($type) }
+            if ($Mode -eq 'Comment') { $remarks = [PluginStepCodegen.Logic.RemarksEmitter]::Emit($type, $Columns) }
             if ($Mode -eq 'Attributes') { $attributes = [PluginStepCodegen.Logic.AttributeEmitter]::Emit($type) }
 
             if ([PluginStepCodegen.Logic.CodeFileWriter]::Update($file, $type.ClassName, $remarks, $attributes)) {
@@ -221,23 +289,23 @@ $sandboxA = New-Sandbox 'a'
 $before = Get-SourceHashes $sandboxA
 $defaultTypes = Get-CheckedTypes { $null -eq $_.Solution }
 
-Check 'fifteen classes in the default list' ($defaultTypes.Count -eq 15) "(got $($defaultTypes.Count))"
+Check 'sixteen classes in the default list' ($defaultTypes.Count -eq 16) "(got $($defaultTypes.Count))"
 
 $a1 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
-Check 'attributes: all fifteen updated, nothing skipped' `
-    (@($a1.Updated).Count -eq 15 -and @($a1.Ambiguous).Count -eq 0 -and
+Check 'attributes: all sixteen updated, nothing skipped' `
+    (@($a1.Updated).Count -eq 16 -and @($a1.Ambiguous).Count -eq 0 -and
      @($a1.NotFound).Count -eq 0 -and @($a1.Failed).Count -eq 0) "($(Format-Report $a1))"
 
 $a2 = Invoke-WriteRun $sandboxA $defaultTypes 'Attributes'
-Check 'attributes again: all fifteen already up to date' `
-    (@($a2.Unchanged).Count -eq 15 -and @($a2.Updated).Count -eq 0) "($(Format-Report $a2))"
+Check 'attributes again: all sixteen already up to date' `
+    (@($a2.Unchanged).Count -eq 16 -and @($a2.Updated).Count -eq 0) "($(Format-Report $a2))"
 
 $a3 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
-Check 'comment: all fifteen updated' (@($a3.Updated).Count -eq 15) "($(Format-Report $a3))"
+Check 'comment: all sixteen updated' (@($a3.Updated).Count -eq 16) "($(Format-Report $a3))"
 
 $a4 = Invoke-WriteRun $sandboxA $defaultTypes 'Comment'
-Check 'comment again: all fifteen already up to date' `
-    (@($a4.Unchanged).Count -eq 15 -and @($a4.Updated).Count -eq 0) "($(Format-Report $a4))"
+Check 'comment again: all sixteen already up to date' `
+    (@($a4.Unchanged).Count -eq 16 -and @($a4.Updated).Count -eq 0) "($(Format-Report $a4))"
 
 # The namespace settles both short name collisions in this view.
 Test-FileContains $sandboxA 'TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs' `
@@ -248,7 +316,7 @@ Test-FileContains $sandboxA 'TestPlugins\Plugins\Rival.cs' `
 # The impersonation stand-in went through the same plumbing the real name would.
 Test-FileContains $sandboxA 'TestPlugins\Plugins\DisabledAndImpersonated.cs' 'E2E Test User'
 
-# Exactly the fifteen files, and nothing else, changed.
+# Exactly the sixteen files, and nothing else, changed.
 $expectedChangedA = @(
     'TestPlugins\Plugins\SimpleCreate.cs'
     'TestPlugins\Plugins\FilteredUpdate.cs'
@@ -260,6 +328,7 @@ $expectedChangedA = @(
     'TestPlugins\Plugins\WideRegistration.cs'
     'TestPlugins\Plugins\HandWritten.cs'
     'TestPlugins\Plugins\Duplicates\AlphaDuplicate.cs'
+    'TestPlugins\Plugins\NearlyAllColumns.cs'
     'TestPlugins\Plugins\Rival.cs'
     'Shared\Twin.cs'
     'WorkInProgressPlugins\NewFeature.cs'
@@ -270,7 +339,7 @@ $after = Get-SourceHashes $sandboxA
 $changed = @($before.Keys | Where-Object { $before[$_] -ne $after[$_] } | Sort-Object)
 $unexpected = @($changed | Where-Object { $expectedChangedA -notcontains $_ })
 $unwritten = @($expectedChangedA | Where-Object { $changed -notcontains $_ })
-Check 'exactly the fifteen expected files changed' `
+Check 'exactly the sixteen expected files changed' `
     ($unexpected.Count -eq 0 -and $unwritten.Count -eq 0) `
     "(unexpected: $($unexpected -join ', '); missed: $($unwritten -join ', '))"
 
@@ -290,11 +359,11 @@ $sandboxB = New-Sandbox 'b'
 $beforeB = Get-SourceHashes $sandboxB
 $allTypes = Get-CheckedTypes { $true }
 
-Check 'twenty two classes with all assemblies ticked' ($allTypes.Count -eq 22) "(got $($allTypes.Count))"
+Check 'twenty three classes with all assemblies ticked' ($allTypes.Count -eq 23) "(got $($allTypes.Count))"
 
 $b1 = Invoke-WriteRun $sandboxB $allTypes 'Attributes'
-Check 'twenty updated, none ambiguous' `
-    (@($b1.Updated).Count -eq 20 -and @($b1.Ambiguous).Count -eq 0 -and @($b1.Failed).Count -eq 0) `
+Check 'twenty one updated, none ambiguous' `
+    (@($b1.Updated).Count -eq 21 -and @($b1.Ambiguous).Count -eq 0 -and @($b1.Failed).Count -eq 0) `
     "($(Format-Report $b1))"
 Check 'only Bravo and Ghost have no source' `
     ((@($b1.NotFound) | Sort-Object) -join ',' -eq 'Bravo,Ghost') "(got $($b1.NotFound -join ', '))"
@@ -302,7 +371,7 @@ Check 'Twin written once per assembly' (@($b1.Updated | Where-Object { $_ -eq 'T
 
 $b2 = Invoke-WriteRun $sandboxB $allTypes 'Attributes'
 Check 'second run: only Twin cannot settle' `
-    ((@($b2.Updated) -join ',') -eq 'Twin,Twin' -and @($b2.Unchanged).Count -eq 18) "($(Format-Report $b2))"
+    ((@($b2.Updated) -join ',') -eq 'Twin,Twin' -and @($b2.Unchanged).Count -eq 19) "($(Format-Report $b2))"
 
 # Each Rival registration landed in its own file, never the other's.
 Test-FileContains $sandboxB 'TestPlugins\Plugins\Rival.cs' `
@@ -326,6 +395,37 @@ foreach ($path in @(
 )) {
     Check "$path untouched" ($beforeB[$path] -eq $afterB[$path])
 }
+
+# ==================================== C. comment mode with the column universes
+Write-Host "Scenario C - comment mode with the experimental except rendering, twice"
+
+$sandboxC = New-Sandbox 'c'
+$emitterColumns = ConvertTo-EmitterColumns $standInColumns
+
+$c1 = Invoke-WriteRun $sandboxC $defaultTypes 'Comment' $emitterColumns
+Check 'comment with columns: all sixteen updated' `
+    (@($c1.Updated).Count -eq 16 -and @($c1.Failed).Count -eq 0) "($(Format-Report $c1))"
+
+$c2 = Invoke-WriteRun $sandboxC $defaultTypes 'Comment' $emitterColumns
+Check 'comment with columns again: all sixteen already up to date' `
+    (@($c2.Unchanged).Count -eq 16 -and @($c2.Updated).Count -eq 0) "($(Format-Report $c2))"
+
+# The three shapes, one step each: near-complete says its exceptions, complete says it
+# is complete, and the stale name keeps its list verbatim - staleness is the finding.
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except notetext, subject)'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except documentbody)'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all 10 columns, written out)'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' 'cmtl_legacyscore, firstname, lastname'
+
+# The quarter rule, judged with the universe present rather than absent: ten of account's
+# twenty five stand-in columns is nowhere near "all", so the list stays a list.
+Test-FileContains $sandboxC 'TestPlugins\Plugins\WideRegistration.cs' '(all columns except' $false
+Test-FileContains $sandboxC 'TestPlugins\Plugins\WideRegistration.cs' 'accountcategorycode, accountnumber'
+
+# A short list stays a list, and no filter at all still reads "(all columns)" rather
+# than "written out" - a registration with no list follows the table as it grows.
+Test-FileContains $sandboxC 'TestPlugins\Plugins\FilteredUpdate.cs' 'firstname, lastname, emailaddress1'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\SimpleCreate.cs' '(all columns)'
 
 # ------------------------------------------------------------------------------ tally
 Write-Host ''

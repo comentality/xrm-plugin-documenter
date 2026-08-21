@@ -246,7 +246,10 @@ function New-StepXml {
     $entity = Get-StepEntity $Step
     $name = Get-StepName $Step
 
-    $filter = Get-StepValue $Step 'Filter'
+    # Get-StepFilter with no columns to expand against, so a dynamic spelling on a step
+    # that is headed into a zip throws here instead of packing an empty filter: the
+    # solution is built before any environment is in sight.
+    $filter = Get-StepFilter $Step
     $description = Get-StepValue $Step 'Description'
     $configuration = Get-StepValue $Step 'Configuration'
     $autoDelete = if (Get-StepValue $Step 'AsyncAutoDelete' $false) { 1 } else { 0 }
@@ -313,7 +316,7 @@ function New-StepXml {
         for ($i = 0; $i -lt $images.Count; $i++) {
             $image = $images[$i]
             $imageId = Get-ImageId $Assembly $Step ($i + 1)
-            $attributes = Get-StepValue $image 'Attributes'
+            $attributes = Get-ImageAttributes $Step $image
             $property = Get-StepValue $image 'Property' 'Target'
 
             [void]$xml.AppendLine("    <SdkMessageProcessingStepImage Name=`"$(ConvertTo-XmlText $image.Name)`">")

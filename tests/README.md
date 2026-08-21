@@ -197,7 +197,7 @@ something still points at it.
 
 # Expected output
 
-Thirty steps across twenty six registered plugin types in six assemblies.
+Thirty three steps across twenty seven registered plugin types in six assemblies.
 
 ## The assembly list
 
@@ -233,13 +233,13 @@ strength of its name alone.
 Ticking both rows in the default list:
 
 ```
-2 assemblies · 15 of 15 classes
+2 assemblies · 16 of 16 classes
 ```
 
 Turning **Managed** on and ticking all five:
 
 ```
-5 assemblies · 21 of 21 classes · 1 with no steps
+5 assemblies · 22 of 22 classes · 1 with no steps
 ```
 
 `Contoso.Crm.Empty` is the one with no steps. It contributes no group at all to the class
@@ -448,6 +448,44 @@ limit is the line width.
 /// Async Post-Create of account (order 10): (all columns)
 /// Sync Post-Update of contact (order 10): (all columns)
 ```
+
+### NearlyAllColumns
+
+The three shapes of a column list the experimental `(all columns except ...)` rendering
+(behind the `†` button, off by default) has to tell apart — and the reason the fixture
+can say "nearly every column" at all: `register.ps1` reads the table's updatable columns
+off the live environment and writes the near-complete and complete lists from them
+(`FilterAllExcept` and `FilterAll` in `registrations.psd1`), so the annotation step
+really is filtered on everything but two of *this* environment's columns, however many
+that turns out to be. `verify.ps1` recomputes the same lists from the same metadata, and
+`write.ps1` expands them against declared stand-in universes, so live and headless agree
+on everything but the counts.
+
+With the setting on, the comment collapses to the exceptions; the third step's list
+holds a column contact does not have — the shape left behind when a custom column is
+deleted after registration — and stays verbatim, because the stale name is the finding.
+`N` below is the live count of task's updatable columns (10 in the headless stand-in):
+
+```csharp
+/// Sync Post-Update of annotation (order 1): (all columns except notetext, subject)
+///     PreImage: (all columns except documentbody)
+/// Sync Post-Update of task (order 2): (all N columns, written out)
+/// Sync Post-Update of contact (order 3): cmtl_legacyscore, firstname, lastname
+```
+
+With it off — the default — the first two steps and the image are recited exactly as
+registered, wrapping like WideRegistration's. Attribute mode always writes the literal
+lists, whatever the setting; they have to compile, and they do.
+
+The image is measured against every real column of annotation where the filter is
+measured against only the updatable ones — diffing either against the other universe
+would invent exceptions that were never offered, which is why `documentbody` can be an
+image's lone exception while `createdby` never shows up as one of the filter's.
+
+Because the lists are pinned to the day they were registered, a table that gains a
+column afterwards drifts out from under them — the near-complete filter grows an extra
+"except", and verify.ps1 fails until `register.ps1` is re-run. That is the behaviour the
+"(all N columns, written out)" phrasing exists to flag, wearing its own fixture.
 
 ### HandWritten
 
@@ -731,36 +769,36 @@ matter. It is pinned here as behaviour, not endorsed as correct.
 Two reports are worth having, because the tool has two states worth being in.
 
 **The default list**, both switches off, both assemblies ticked, source folder `tests\src`
-- fifteen classes, every one resolving to a file — `Duplicate` and `Rival` match two files
+- sixteen classes, every one resolving to a file — `Duplicate` and `Rival` match two files
 each on the short name, and the registered namespace picks the right one:
 
 ```
-// Updated (15)
+// Updated (16)
 //   ... every class with a file, Twin once
 ```
 
-Run it again and everything says `Already up to date (15)`. This is the run that settles,
+Run it again and everything says `Already up to date (16)`. This is the run that settles,
 which is what a developer documenting their own assembly should get.
 
-**With Managed and Microsoft's both on** and all six assemblies ticked, all twenty two
+**With Managed and Microsoft's both on** and all six assemblies ticked, all twenty three
 classes are accounted for and pressing Write should produce a report of the shape:
 
 ```
-// Updated (20)
+// Updated (21)
 //   ... every class with a file, Twin twice
 // No matching .cs file (2)
 //   Bravo
 //   Ghost
 ```
 
-Twenty writes over nineteen files, because `Twin` is written once per assembly. Run it a
-second time without changing anything and it becomes:
+Twenty one writes over twenty files, because `Twin` is written once per assembly. Run it
+a second time without changing anything and it becomes:
 
 ```
 // Updated (2)
 //   Twin
 //   Twin
-// Already up to date (18)
+// Already up to date (19)
 ```
 
 `Twin` is the one thing that cannot settle: the two registrations overwrite each other on

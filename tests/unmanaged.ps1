@@ -87,6 +87,15 @@ function Register-Unmanaged {
     })
     $targets = Resolve-StepTargets $steps
 
+    # The dynamic column lists are expanded against the table as it is right now, which is
+    # what makes the near-complete filter genuinely near-complete in this environment
+    # rather than in whichever one the fixture was written against.
+    $columns = @{}
+    foreach ($entity in Get-DynamicColumnEntities @{ Assemblies = $assemblies }) {
+        Write-Host "Reading the current columns of $entity..."
+        $columns[$entity] = Get-DataverseEntityColumns $entity
+    }
+
     # Impersonation is a lookup, and the two routes reach it differently: a solution
     # carries ImpersonatingUserIdName and lets the importer resolve the name, while a
     # record written by hand has to name the id. WhoAmI answers with the caller's, which is
@@ -146,7 +155,7 @@ function Register-Unmanaged {
                 asyncautodelete     = [bool](Get-StepValue $step 'AsyncAutoDelete' $false)
                 configuration       = Get-StepValue $step 'Configuration' $null
                 description         = Get-StepValue $step 'Description' $null
-                filteringattributes = Get-StepValue $step 'Filter' $null
+                filteringattributes = Get-StepFilter $step $columns
                 # The plugin type goes on EventHandler, which is polymorphic - a step can
                 # equally run a service endpoint - so the binding has to name which kind
                 # this is. PluginTypeId, which is what the tool's query joins on, is
@@ -187,7 +196,7 @@ function Register-Unmanaged {
                         entityalias         = $image.Alias
                         imagetype           = $image.Type
                         messagepropertyname = Get-StepValue $image 'Property' 'Target'
-                        attributes          = Get-StepValue $image 'Attributes' $null
+                        attributes          = Get-ImageAttributes $step $image $columns
                         'sdkmessageprocessingstepid@odata.bind' = "/sdkmessageprocessingsteps($stepId)"
                     }
             }

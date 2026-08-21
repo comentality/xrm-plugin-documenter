@@ -150,6 +150,20 @@ $($entities | ForEach-Object { "        <value>$_</value>" } | Out-String)      
     }
 }
 
+# The dynamic filters were expanded against the live table when register.ps1 wrote them,
+# so the expected value is recomputed the same way here - through the same functions, off
+# the same metadata. If a column arrived in between, this fails and re-running
+# register.ps1 is the fix.
+$liveColumns = @{}
+$dynamicEntities = Get-DynamicColumnEntities $manifest
+if ($dynamicEntities.Count -gt 0) {
+    . (Join-Path $root 'dataverse.ps1')
+    Connect-Dataverse -Environment $Environment | Out-Null
+    foreach ($name in $dynamicEntities) {
+        $liveColumns[$name] = Get-DataverseEntityColumns $name
+    }
+}
+
 Write-Host "Checking $($manifest.Assemblies.Count) assemblies and $($allSteps.Count) steps against the environment..."
 
 foreach ($assembly in $manifest.Assemblies) {
@@ -214,7 +228,7 @@ foreach ($assembly in $manifest.Assemblies) {
             "      <condition attribute=`"statecode`" operator=`"eq`" value=`"$state`" />"
             "      <condition attribute=`"name`" operator=`"eq`" value=`"$(ConvertTo-XmlText (Get-StepName $step))`" />"
             "      <condition attribute=`"asyncautodelete`" operator=`"eq`" value=`"$(([bool](Get-StepValue $step 'AsyncAutoDelete' $false)).ToString().ToLower())`" />"
-            (New-Condition 'filteringattributes' (Get-StepValue $step 'Filter'))
+            (New-Condition 'filteringattributes' (Get-StepFilter $step $liveColumns))
             (New-TextCondition 'description' (Get-StepValue $step 'Description'))
             (New-TextCondition 'configuration' (Get-StepValue $step 'Configuration'))
         )
@@ -295,7 +309,7 @@ $links
                 "      <condition attribute=`"name`" operator=`"eq`" value=`"$(ConvertTo-XmlText $image.Name)`" />"
                 "      <condition attribute=`"entityalias`" operator=`"eq`" value=`"$(ConvertTo-XmlText $image.Alias)`" />"
                 "      <condition attribute=`"messagepropertyname`" operator=`"eq`" value=`"$(Get-StepValue $image 'Property' 'Target')`" />"
-                (New-Condition 'attributes' (Get-StepValue $image 'Attributes'))
+                (New-Condition 'attributes' (Get-ImageAttributes $step $image $liveColumns))
             )
 
             Test-Fetch -Description "    image $($image.Name) on $($step.Id)" -Expect $imageId -Xml @"

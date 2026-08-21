@@ -202,3 +202,32 @@ function Get-DataverseRecords {
     $response = Invoke-Dataverse -Method GET -Path $Query
     , @($response.value)
 }
+
+<#
+    The entity's current columns, split exactly the way the tool splits them in
+    RegistrationQuery.GetEntityColumns: companion attributes (the _name and yominame
+    shadows, entityimage_url and friends) dropped via AttributeOf, Image every real
+    column, Filter the updatable subset. The dynamic lists in registrations.psd1 are
+    expanded against this, so the two sides have to agree on the universe or the tool
+    would read exceptions the fixture never declared.
+#>
+function Get-DataverseEntityColumns {
+    param([Parameter(Mandatory)] [string] $Entity)
+
+    $rows = Get-DataverseRecords ("EntityDefinitions(LogicalName='$Entity')/Attributes" +
+        "?`$select=LogicalName,AttributeOf,IsValidForUpdate")
+    if ($rows.Count -eq 0) {
+        throw "The environment has no columns for '$Entity'. Is the table there at all?"
+    }
+
+    $real = @($rows | Where-Object { -not $_.AttributeOf } | ForEach-Object { $_.LogicalName })
+    [Array]::Sort($real, [StringComparer]::Ordinal)
+    $updatable = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@($rows | Where-Object { $_.IsValidForUpdate } | ForEach-Object { $_.LogicalName }),
+        [StringComparer]::OrdinalIgnoreCase)
+
+    @{
+        Image  = $real
+        Filter = @($real | Where-Object { $updatable.Contains($_) })
+    }
+}

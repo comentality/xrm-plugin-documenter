@@ -61,6 +61,26 @@
                     --activate-plugins. An unmanaged step is simply written disabled.
       Images        Type 0 PreImage, 1 PostImage, 2 both. Attributes omitted means every
                     column, which the summary comment has to flag.
+
+    Two of the filter spellings are dynamic, because "nearly every column of the table"
+    cannot be a literal - the list depends on the environment. Both are expanded at
+    register time against the live table's updatable columns (and by write.ps1 against a
+    declared stand-in), and both are only reachable on the unmanaged route; the solution
+    route refuses them, since a zip is packed before any environment is in sight.
+
+      FilterAll         = $true      every updatable column, spelled out. Pinned to the
+                                     day it was registered, unlike an empty filter, which
+                                     is the distinction the tool's experimental
+                                     "(all N columns, written out)" phrasing exists for.
+      FilterAllExcept   = 'a,b'      every updatable column but these. The names must be
+                                     real columns of the table, or registering throws -
+                                     the fixture's claim is that the exceptions are
+                                     exactly these.
+      AttributesAllExcept = 'a'      the same, on an image, expanded against every real
+                                     column rather than only the updatable ones.
+
+    Columns are read once at register time, so a table that gains a column afterwards
+    drifts out from under the near-complete lists; re-running register.ps1 catches up.
 #>
 @{
     Publishers = @{
@@ -146,6 +166,9 @@
                 @{ Id = '0d'; Name = 'TestPlugins.Rival' }
                 # Declared by src\Shared\Twin.cs, which Contoso.Crm.Plugins links as well.
                 @{ Id = '0e'; Name = 'Shared.Twin' }
+                # The three shapes of a column list the "(all columns except ...)"
+                # experiment has to tell apart.
+                @{ Id = '0f'; Name = 'TestPlugins.NearlyAllColumns' }
             )
 
             Steps = @(
@@ -282,6 +305,36 @@
                 @{
                     Id = '14'; Type = 'Shared.Twin'
                     Message = 'Create'; Entity = 'account'; Stage = 40; Mode = 0; Rank = 3
+                }
+
+                # --- The dynamic column lists, one shape per step, ranks kept distinct so
+                # --- the order the steps come back in never rests on a tie.
+                # Nearly every updatable column of annotation, and an image that is every
+                # real column but the blob. With the experiment on, both collapse to their
+                # exceptions; off, both are recited as registered.
+                @{
+                    Id = '15'; Type = 'TestPlugins.NearlyAllColumns'
+                    Message = 'Update'; Entity = 'annotation'; Stage = 40; Mode = 0; Rank = 1
+                    FilterAllExcept = 'notetext,subject'
+                    Images = @(
+                        @{ Type = 0; Name = 'PreImage'; Alias = 'PreImage'; AttributesAllExcept = 'documentbody' }
+                    )
+                }
+                # Every updatable column of task, spelled out - which is not the same
+                # registration as no filter at all, and the comment has to say so.
+                @{
+                    Id = '16'; Type = 'TestPlugins.NearlyAllColumns'
+                    Message = 'Update'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 2
+                    FilterAll = $true
+                }
+                # A filter carrying a column contact does not have - the shape left behind
+                # when a custom column is deleted after the step was registered. The stale
+                # name is the finding, so the list must stay verbatim however near-complete
+                # the rest of it is.
+                @{
+                    Id = '17'; Type = 'TestPlugins.NearlyAllColumns'
+                    Message = 'Update'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 3
+                    Filter = 'cmtl_legacyscore,firstname,lastname'
                 }
 
                 # TestPlugins.NeverRegistered and TestPlugins.Beta.Duplicate are deliberately
