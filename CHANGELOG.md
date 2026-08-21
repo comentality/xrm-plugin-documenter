@@ -20,6 +20,12 @@
   stage, rank *and* message name are now ordered by table rather than by whatever the query
   returned, so the same registration writes the same file twice running.
 
+- **Credit where it is due.** The docs, the store listing, the generated definitions file
+  and the dialog that writes it now say plainly whose attribute model this is:
+  [Xrm Tools](https://github.com/rezanid/xrmtools), the Visual Studio extension that reads
+  these same attributes back to deploy and register an assembly — and that is worth
+  installing whether or not you use this. Compatibility with it is this tool's premise; it
+  had earned more than a passing link.
 - `XrmToolsMetaAttributes.cs` gains `Stages.DepecratedPostOperation = 50` — upstream's
   spelling, upstream's `[Obsolete]` — which it had been missing. Nothing the tool writes
   changes: a step at the retired stage 50 is still emitted as `(Stages)50`, because naming

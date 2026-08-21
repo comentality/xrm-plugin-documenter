@@ -84,3 +84,10 @@ If you want the emitted attributes to *compile*, you need either the `XrmTools.M
 package or the definitions file this tool can write for you — see
 [Attribute definitions file](attribute-definitions.md). The summary comment mode needs
 neither: it is a comment.
+
+And if the attributes are new to you, meet the tool they belong to:
+**[Xrm Tools](https://github.com/rezanid/xrmtools)**, a Visual Studio extension that reads
+them back the way this one writes them — deploying and registering the assembly from the
+source, with Dataverse-aware IntelliSense, typed entity generation and a FetchXML designer
+alongside. Documenting an existing registration is the half of the round trip that lives
+here; the other half is worth having.

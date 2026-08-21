@@ -4,6 +4,13 @@ The tool reads the plugin steps and images registered in a Dataverse environment
 writes them into your C# source, either as [Xrm Tools](https://github.com/rezanid/xrmtools)
 attributes or as a readable summary comment.
 
+The attributes are Xrm Tools', and compatibility with it is the premise: what this writes
+is what Xrm Tools reads back. It is a Visual Studio extension that turns those same
+attributes into the registration — one-click deploy, Dataverse-aware IntelliSense, typed
+entity and plugin generation, a FetchXML designer — and if you are not using it yet,
+[it is worth a look](https://github.com/rezanid/xrmtools). This tool runs the other way:
+from an environment somebody already registered, back into your source.
+
 | | |
 |---|---|
 | [Getting started](getting-started.md) | Install it, connect, and do a first run. |

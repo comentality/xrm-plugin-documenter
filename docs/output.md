@@ -33,6 +33,13 @@ These are [Xrm Tools](https://github.com/rezanid/xrmtools) attributes and they c
 see [Attribute definitions file](attribute-definitions.md) for what has to be in the
 project for that.
 
+They are also *readable* by Xrm Tools, which is the point of writing them rather than
+something of our own: its Visual Studio extension takes attributes like these and deploys
+and registers the assembly from them, so a class this tool documented can be redeployed
+from its own source. Worth [a look](https://github.com/rezanid/xrmtools) if you have not
+met it — it also brings Dataverse-aware IntelliSense, typed entity generation and a
+FetchXML designer to the same project.
+
 **Attribute order is load bearing.** `[Image]` binds to the nearest preceding `[Step]`, so
 steps are written in execution order with their own images following them. Do not sort
 them.

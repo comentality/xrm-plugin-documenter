@@ -2,8 +2,10 @@
 
 ## What the attribute model cannot say
 
-These come from the Xrm Tools attribute model, not from this tool. The summary comment mode
-is not bound by any of them, which is part of why it exists.
+These come from the [Xrm Tools](https://github.com/rezanid/xrmtools) attribute model, not
+from this tool — and staying inside it is deliberate, because an attribute Xrm Tools
+cannot read back is worth nothing in your source. The summary comment mode is not bound by
+any of them, which is part of why it exists.
 
 - **Isolation mode is assembly-level.** `[assembly: PluginAssembly(IsolationMode = ...)]`
   has no per-step equivalent, unlike spkl.

@@ -1761,7 +1761,11 @@ namespace PluginStepCodegen
                 MessageBox.Show(
                     "Wrote " + target + Environment.NewLine + Environment.NewLine
                     + "Do not also reference the XrmTools.Meta.Attributes NuGet package in this project. "
-                    + "It generates the same types and you will get duplicate type errors.",
+                    + "It generates the same types and you will get duplicate type errors."
+                    + Environment.NewLine + Environment.NewLine
+                    + "These attributes are Xrm Tools' own, and Xrm Tools reads them back to deploy and "
+                    + "register the assembly from your source. Worth a look:"
+                    + Environment.NewLine + "https://github.com/rezanid/xrmtools",
                     "Attribute definitions created", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)

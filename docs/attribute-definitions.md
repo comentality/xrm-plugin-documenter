@@ -10,8 +10,12 @@ ways to get them, and you must pick exactly one.
 <PackageReference Include="XrmTools.Meta.Attributes" Version="1.2.0" />
 ```
 
-The upstream package. Use it if you are already using Xrm Tools, or want its source
-generators.
+The upstream package, and the one to prefer if you have any use for the rest of
+[Xrm Tools](https://github.com/rezanid/xrmtools) — the Visual Studio extension these
+attributes belong to, which reads them back to deploy and register the assembly, and
+brings Dataverse-aware IntelliSense, typed entity generation and a FetchXML designer with
+it. Take it as a recommendation: this tool writes the attributes, that one makes them do
+something.
 
 Any version works. The package has had two shapes — up to 1.1.3 it added its attributes to
 your compilation as source files and declared them `public`, from 1.1.4 a source generator

@@ -13,6 +13,12 @@
 //
 //         <PackageReference Include="XrmTools.Meta.Attributes" Version="1.2.0" />
 //
+//     Which is the better end to arrive at. These attributes are Xrm Tools' own,
+//     and Xrm Tools reads them back: a Visual Studio extension that deploys and
+//     registers the assembly from the source they are in, with Dataverse-aware
+//     IntelliSense, typed entity generation and a FetchXML designer besides.
+//     Worth a look - https://github.com/rezanid/xrmtools
+//
 //     That it is still identical is not a claim anybody has to take on trust.
 //     tests\compat.ps1 compiles the same generated attributes against this file
 //     and against the real package at 1.0.57, 1.1.3, 1.1.4 and whatever is

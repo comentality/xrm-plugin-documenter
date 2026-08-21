@@ -21,6 +21,27 @@ honest. The only existing tool that closes the gap is `spkl instrument`, a CLI b
 the largely dormant SparkleXrm framework. This does the same job from inside XrmToolBox,
 against the modern attribute model.
 
+## Built for Xrm Tools — go and look at it
+
+The attribute model is **[Xrm Tools](https://github.com/rezanid/xrmtools)**', and being
+compatible with it is this tool's whole premise: what gets written here is what Xrm Tools
+reads back, down to the constructor overload it binds and the order the attributes are
+in. Every release is compiled and evaluated against the real
+[`XrmTools.Meta.Attributes`](https://www.nuget.org/packages/XrmTools.Meta.Attributes)
+package at four versions to keep that true.
+
+If you are not using it yet, it is worth the detour. It is a Visual Studio extension —
+*"all the missing features for Power Platform, one release at a time"* — that turns those
+same attributes into the registration itself: one-click assembly deploy and step
+registration, Dataverse-aware IntelliSense over your metadata, typed entity and plugin
+generation, and a FetchXML designer, with no build-time codegen and no telemetry.
+
+The two run in opposite directions and meet in the middle. Xrm Tools takes the attributes
+in your source and makes the environment match them; this takes an environment somebody
+already registered by hand and writes it back into your source in the same shape — which
+is exactly what you want on the day you inherit a plugin project with no attributes in it
+at all.
+
 ## Install
 
 **Tool Library** in XrmToolBox → search for **Plugin Step Codegen** → **Install**. Nothing
@@ -72,11 +93,12 @@ carry both.
 public partial class AccountManager : IPlugin
 ```
 
-Style follows the `XrmTools.Meta.Attributes` README: the widest positional constructor
-the step's data supports, remaining facts as named properties, wrapping one argument per
-line only when the line gets long. **Attribute order is load bearing** — `[Image]` binds
-to the nearest preceding `[Step]`, so steps are written in execution order with their own
-images following them.
+Style follows the [`XrmTools.Meta.Attributes`](https://github.com/rezanid/xrmtools)
+README: the widest positional constructor the step's data supports, remaining facts as
+named properties, wrapping one argument per line only when the line gets long.
+**Attribute order is load bearing** — `[Image]` binds to the nearest preceding `[Step]`,
+so steps are written in execution order with their own images following them, which is
+the order Xrm Tools reads them back in and not ours to rearrange.
 
 ### Readable summary comment
 
