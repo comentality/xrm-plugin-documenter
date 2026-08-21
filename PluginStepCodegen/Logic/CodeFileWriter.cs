@@ -101,11 +101,14 @@ namespace PluginStepCodegen.Logic
                     }
                 }
 
-                foreach (var directory in directories)
+                // Pushed backwards so they come off the stack in the order they were listed:
+                // a list of the files declaring an ambiguous class reads better down the tree
+                // than up it, and a stable order is one less thing to explain.
+                for (var i = directories.Length - 1; i >= 0; i--)
                 {
-                    if (!IsBuildOutput(directory))
+                    if (!IsBuildOutput(directories[i]))
                     {
-                        pending.Push(directory);
+                        pending.Push(directories[i]);
                     }
                 }
             }

@@ -57,20 +57,26 @@ if (-not $SkipBuild) {
 }
 if (-not (Test-Path $exe)) { throw "No harness at $exe - run without -SkipBuild." }
 
-# What each phase is allowed to cost. Ratio is against the floor - reading every source
-# file once - and Ms is the wall clock a person would notice. A phase needs to pass both.
+# What each phase is allowed to cost, said the way the phase costs it: Ratio is against
+# the floor - reading every source file once - and PerClass is milliseconds per registered
+# class. A phase is allowed Ratio x floor + PerClass x classes, and separately may not
+# exceed Ms of wall clock, which is the part a person notices.
 #
-# The floor is a whole tree read, so a phase that only touches the classes it was asked
-# about is allowed to be a fraction of it; the ones that read everything get room for the
-# work they do on top. Ambition, not measurement: these are what the numbers should be,
-# and the ones that were failing when this script was written are noted in tests\README.md.
+# Writing that budget in two terms is the point rather than a nicety. A scan is a folder
+# sized job and should cost about a read; a render never opens the folder at all and is
+# only ever as slow as the number of classes; a write is both. A phase whose real cost is
+# in the wrong term is the bug this script exists to catch - one press of Write used to
+# read the whole folder once per class, and that is a Ratio of thirty, not of four.
+#
+# These are ambitions rather than measurements, set a comfortable way above what the code
+# does today so an ordinary machine having a bad minute is not a failure.
 $budgets = @(
-    @{ Phase = 'scan';    Ratio = 3.0; Ms = 1200; What = 'holding the folder against the registrations' }
-    @{ Phase = 'rescan';  Ratio = 3.0; Ms = 1200; What = 'the scan a finished write starts' }
-    @{ Phase = 'render';  Ratio = 0.5; Ms = 100;  What = 'the list render, on the UI thread' }
-    @{ Phase = 'lookup';  Ratio = 1.5; Ms = 800;  What = 'finding the file for every class' }
-    @{ Phase = 'write';   Ratio = 4.0; Ms = 2000; What = 'one press of Write' }
-    @{ Phase = 'rewrite'; Ratio = 4.0; Ms = 2000; What = 'pressing Write again, nothing to change' }
+    @{ Phase = 'scan';    Ratio = 3.0; PerClass = 0.0; Ms = 1200; What = 'holding the folder against the registrations' }
+    @{ Phase = 'rescan';  Ratio = 3.0; PerClass = 0.0; Ms = 1200; What = 'the scan a finished write starts' }
+    @{ Phase = 'render';  Ratio = 0.0; PerClass = 2.0; Ms = 100;  What = 'the list render, on the UI thread' }
+    @{ Phase = 'lookup';  Ratio = 0.0; PerClass = 0.05; Ms = 20;  What = 'finding the file for every class' }
+    @{ Phase = 'write';   Ratio = 2.5; PerClass = 2.0; Ms = 2000; What = 'one press of Write' }
+    @{ Phase = 'rewrite'; Ratio = 2.5; PerClass = 2.0; Ms = 2000; What = 'pressing Write again, nothing to change' }
 )
 
 $script:failures = @()
@@ -107,9 +113,13 @@ foreach ($size in $Files) {
     foreach ($budget in $budgets) {
         $phase = $phases[$budget.Phase]
         $ratio = if ($floor -gt 0) { $phase.Ms / $floor } else { 0 }
+        $allowed = $budget.Ratio * $floor + $budget.PerClass * $Classes
         $over  = @()
-        if ($ratio -gt $budget.Ratio) { $over += ('{0:N1}x floor, allowed {1:N1}x' -f $ratio, $budget.Ratio) }
-        if ($phase.Ms -gt $budget.Ms) { $over += ('{0:N0} ms, allowed {1:N0} ms' -f $phase.Ms, $budget.Ms) }
+        if ($phase.Ms -gt $allowed) {
+            $over += ('{0:N1} ms, allowed {1:N1} ms ({2:N1}x floor + {3:N1} ms per class)' -f
+                $phase.Ms, $allowed, $budget.Ratio, $budget.PerClass)
+        }
+        if ($phase.Ms -gt $budget.Ms) { $over += ('{0:N0} ms, over the {1:N0} ms a person notices' -f $phase.Ms, $budget.Ms) }
 
         $line = "  {0,-9} {1}  {2,5:N1}x  {3}" -f $budget.Phase, (Format-Ms $phase.Ms), $ratio, $phase.Note
         if ($over.Count -eq 0) {

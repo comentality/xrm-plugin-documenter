@@ -100,6 +100,7 @@ copy of them to be wrong.
 | `dataverse.ps1` | An access token and four verbs. The only thing here that talks to the environment without going through `pac`. |
 | `write.ps1` | The write path, headlessly: rebuilds from `registrations.psd1` the objects `RegistrationQuery` would have read, runs the real find, emit and write code over sandbox copies of `src\` under `tests\.write`, and checks the reports and files against [Expected output](#expected-output) - including that the registered namespace settles every short name collision, that a second run settles, and that what was written compiles. No environment needed. |
 | `compat.ps1`, `compat\` | The emitted attributes against the real `XrmTools.Meta.Attributes` package, pulled from nuget.org. Everything else here judges the tool against this repository's own copy of the shape; this is the only thing that asks whether that copy is still upstream's. Needs the network, not an environment. |
+| `perf.ps1`, `PluginStepCodegen.PerfHarness\` | What the scan and the write *cost*, over generated repositories of 250 to 4000 files. Everything else here asks whether the answer is right; this asks whether waiting for it is reasonable. No environment needed. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
@@ -237,6 +238,60 @@ match:
   use for - are listed rather than failed on.
 
 Needs the network for the restores. Needs no Dataverse connection and no `register.ps1`.
+
+## Speed — `perf.ps1`
+
+Everything above asks whether the answer is right. This asks what waiting for it costs.
+
+```powershell
+.\perf.ps1                     # 250, 1000 and 4000 file repositories
+.\perf.ps1 -Files 4000         # one size
+.\perf.ps1 -Classes 120        # a bigger registration
+.\perf.ps1 -Keep               # leave the generated trees for a profiler
+```
+
+The harness generates a repository rather than reusing `src\`: four projects, a dozen areas,
+a shared plugin base, ordinary code around the plugins, and a build's worth of output under
+`bin\` and `obj\` to walk past. Size is the whole point of the exercise, and the fixtures are
+seventeen classes.
+
+Every phase is quoted against **the floor**: opening and reading every source file once, on
+this machine, over this tree. That is what an honest answer about the folder costs, and it
+makes the budgets mean the same thing on a laptop as on a build agent. The budgets are then
+written in two terms — so many times the floor, plus so many milliseconds per registered
+class — because a phase whose cost is in the wrong term is exactly the bug worth catching:
+
+| | Costs | Budget |
+|---|---|---|
+| `scan` | the folder | 3x floor |
+| `rescan` | the folder | 3x floor |
+| `index` | the folder | reported, not judged |
+| `render` | the classes, on the UI thread | 2 ms each, and never 100 ms |
+| `lookup` | the classes, folder already read | 0.05 ms each |
+| `write` | both | 2.5x floor + 2 ms per class |
+| `rewrite` | both | 2.5x floor + 2 ms per class |
+
+The first run of this script, against the code as it then stood, is why it exists. On a
+250 file tree with 33 registered classes — a small real project — reading every file took
+**12 ms**, and:
+
+| Phase | Was | Now |
+|---|---|---|
+| `scan` | 4051 ms | 17 ms |
+| `write` | 6306 ms | 48 ms |
+| `lookup` | 3046 ms | under 0.1 ms |
+
+None of that was the disk. Every registered class was re-scanning every file's text with a
+regex of its own; deciding which local classes are plugins built a fresh `Regex` for every
+name-against-class pair and did it again on every pass of a fixpoint; and one press of Write
+walked and re-read the entire folder once per class — on the UI thread, with the window
+frozen until it finished. `SourceIndex` reads the folder once and answers out of a
+dictionary, and the write runs under `WorkAsync` like every other slow thing in the tool.
+
+A note on cold caches: this runs against a tree Windows has just written, so the file cache
+is warm. A first scan of a repository after a reboot pays real disk on top. The ratios are
+what transfer between machines; the milliseconds are a floor on what somebody will see, not
+a ceiling.
 
 # Expected output
 

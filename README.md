@@ -159,12 +159,18 @@ cd tests
 .\verify.ps1        # confirm the environment matches the test matrix
 .\write.ps1         # run the real emit and write path over sandbox copies of the fixtures
 .\compat.ps1        # check what is emitted against the real XrmTools package from nuget
+.\perf.ps1          # time the scan and the write over generated repositories
 .\unregister.ps1    # take it all away again
 .\xtb.ps1           # build the tool and open it in an XrmToolBox of its own
 .\ui.ps1            # screenshot the layout without XrmToolBox or a connection
 ```
 
-`write.ps1` and `compat.ps1` need no environment and no connection.
+`write.ps1`, `compat.ps1` and `perf.ps1` need no environment and no connection.
+
+`perf.ps1` generates plugin repositories of 250, 1000 and 4000 files and times the real
+scan and the real write over them, judged against what reading the folder once costs on
+the same machine. It exists because the answer to "why is this slow" was never the disk:
+a phase costing many times a read is a phase reading the folder once per class.
 
 `compat.ps1` is the one that keeps the tool's premise honest. It builds a corpus hitting
 every decision the emitter makes, compiles it against both the generated definitions file

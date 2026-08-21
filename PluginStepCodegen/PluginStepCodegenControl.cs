@@ -1219,6 +1219,16 @@ namespace PluginStepCodegen
             var registeredNames = new HashSet<string>(
                 _typesByAssembly.Values.SelectMany(t => t).Select(t => t.ClassName));
 
+            // Marks left over from another folder are not stale, they are about somewhere
+            // else, so they go before the new answer arrives rather than after. A rescan of
+            // the same folder keeps its marks up, because they are still very nearly true
+            // and blanking the column on the way back from a write reads as a fault.
+            if (_scan != null && !string.Equals(_scan.Folder, folder, StringComparison.OrdinalIgnoreCase))
+            {
+                _scan = null;
+                RenderScan();
+            }
+
             _lblScanStatus.Text = "Scanning...";
             Task.Run(() => SourceScanner.Scan(folder, listed, registeredNames)).ContinueWith(t =>
             {

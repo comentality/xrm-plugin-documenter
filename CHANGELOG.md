@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **The source folder is read once, not once per class.** A project of 250 files with 33
+  registered classes took four seconds to scan and six to write. Reading all 250 files takes
+  twelve milliseconds, so none of that was ever the disk: every registered class was
+  re-scanning every file's text with a regex of its own, working out which local classes are
+  plugins built a fresh `Regex` for every name-against-class pair and did it again on every
+  pass, and one press of **Write to Files** walked and re-read the whole folder once per
+  class. The folder is now read and parsed once and answered out of a dictionary.
+
+  | On 250 files, 33 classes | Was | Now |
+  |---|---|---|
+  | Scan | 4051 ms | 17 ms |
+  | Write | 6306 ms | 48 ms |
+
+  A 4000 file repository — larger than most plugin repositories get — now scans in about
+  600 ms, of which 430 ms is reading the files.
+
+- **Write no longer freezes the window.** It ran on the UI thread, so a slow write was a
+  tool that had stopped repainting. It runs under the same progress overlay as loading the
+  assemblies does, and says how many classes it is writing.
+
+- **Marks from another folder are cleared when you change folders**, rather than sitting
+  there looking authoritative until the new scan lands. A rescan of the *same* folder — the
+  one that follows a write — keeps its marks up, because blanking the column on the way back
+  from a successful write reads as a fault.
+
+- `tests\perf.ps1` times the scan and the write over generated repositories of 250 to 4000
+  files, against what reading the folder once costs on the same machine. It is what found
+  all of the above.
+
 - **The summary comment is grouped by table.** A generic plugin — one class registered
   against a dozen tables to stamp the same column on all of them — used to read as one
   interleaved list, every table's steps scattered through it by stage. The comment now
