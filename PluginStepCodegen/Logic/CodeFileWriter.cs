@@ -46,77 +46,76 @@ namespace PluginStepCodegen.Logic
         }
 
         /// <summary>
-        /// Matches a declaration of exactly this namespace, block or file scoped. A nested
-        /// declaration (<c>namespace A { namespace B {</c>) is not recognised, deliberately:
-        /// the caller uses a failed match to leave a tie unresolved, never to disqualify the
-        /// only file, so the miss is safe in the one direction it can happen.
-        /// </summary>
-        public static Regex NamespaceDeclaration(string namespaceName)
-        {
-            return new Regex(
-                @"(?m)^[ \t]*namespace[ \t]+" + Regex.Escape(namespaceName) + @"\s*[{;]");
-        }
-
-        /// <summary>
         /// Finds the single .cs file declaring <paramref name="className"/>. Returns null
         /// when there is no match; sets <paramref name="ambiguous"/> when there are several.
         /// When several files declare the short name, the registered namespace breaks the
         /// tie if exactly one of them declares it.
+        ///
+        /// This reads the whole folder to answer about one class, so it is for the one-off
+        /// question. Anything asking about a batch of classes should build a
+        /// <see cref="SourceIndex"/> once and call <see cref="SourceIndex.Find"/>.
         /// </summary>
         public static string FindFile(string folder, string className, string namespaceName, out List<string> ambiguous)
         {
-            var files = EnumerateSources(folder)
-                .Select(f => new KeyValuePair<string, string>(f, ReadAllText(f)));
-            return FindInFiles(files, className, namespaceName, out ambiguous);
-        }
-
-        /// <summary>Every .cs file under the folder that somebody wrote, as opposed to a build's.</summary>
-        public static IEnumerable<string> EnumerateSources(string folder)
-        {
-            return Directory
-                .EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)
-                .Where(f => !IsGenerated(f));
+            var file = SourceIndex.Build(folder).Find(className, namespaceName, out ambiguous);
+            return file == null ? null : file.Path;
         }
 
         /// <summary>
-        /// The matching behind <see cref="FindFile"/>, over texts already read, so the scan
-        /// that marks the lists and the write that trusts those marks cannot disagree.
+        /// Every .cs file under the folder that somebody wrote, as opposed to a build's.
+        /// Build folders are stepped over rather than walked and discarded, because a bin
+        /// folder holds more files than the source beside it.
         /// </summary>
-        public static string FindInFiles(IEnumerable<KeyValuePair<string, string>> files, string className, string namespaceName, out List<string> ambiguous)
+        public static IEnumerable<string> EnumerateSources(string folder)
         {
-            ambiguous = null;
-            var declaration = ClassDeclaration(className);
+            var pending = new Stack<string>();
+            pending.Push(folder);
 
-            var matches = files
-                .Where(f => declaration.IsMatch(f.Value))
-                .ToList();
-
-            // Only exactly one survivor settles a tie. Zero means the namespace was not
-            // found as written - possibly declared nested, possibly the registration is
-            // stale - and two or more is a partial class spanning files, and in either
-            // case picking a file would mean writing a registration into the wrong class.
-            if (matches.Count > 1 && !string.IsNullOrEmpty(namespaceName))
+            while (pending.Count > 0)
             {
-                var ns = NamespaceDeclaration(namespaceName);
-                var narrowed = matches.Where(f => ns.IsMatch(f.Value)).ToList();
-                if (narrowed.Count == 1)
+                var current = pending.Pop();
+
+                string[] files;
+                string[] directories;
+                try
                 {
-                    matches = narrowed;
+                    files = Directory.GetFiles(current, "*.cs");
+                    directories = Directory.GetDirectories(current);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // A folder somebody cannot open is not a folder their plugins are in.
+                    continue;
+                }
+                catch (DirectoryNotFoundException)
+                {
+                    // Deleted between being listed and being opened.
+                    continue;
+                }
+
+                foreach (var file in files)
+                {
+                    if (!IsGenerated(file))
+                    {
+                        yield return file;
+                    }
+                }
+
+                foreach (var directory in directories)
+                {
+                    if (!IsBuildOutput(directory))
+                    {
+                        pending.Push(directory);
+                    }
                 }
             }
+        }
 
-            if (matches.Count == 0)
-            {
-                return null;
-            }
-
-            if (matches.Count > 1)
-            {
-                ambiguous = matches.Select(f => f.Key).ToList();
-                return null;
-            }
-
-            return matches[0].Key;
+        private static bool IsBuildOutput(string directory)
+        {
+            var name = Path.GetFileName(directory);
+            return string.Equals(name, "bin", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(name, "obj", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsGenerated(string path)
@@ -130,22 +129,6 @@ namespace PluginStepCodegen.Logic
             var name = Path.GetFileName(path);
             return name.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)
                    || name.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string ReadAllText(string path)
-        {
-            try
-            {
-                return File.ReadAllText(path);
-            }
-            catch (IOException)
-            {
-                return string.Empty;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return string.Empty;
-            }
         }
 
         /// <summary>

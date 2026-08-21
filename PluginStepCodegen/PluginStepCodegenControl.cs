@@ -1123,6 +1123,16 @@ namespace PluginStepCodegen
             return _rbAttributes.Checked ? AttributeEmitter.Emit(type) : null;
         }
 
+        /// <summary>
+        /// An emitted block as a list, or null kept as null: null means "not this mode's
+        /// concern" all the way down to the splice, and must survive being carried to a
+        /// worker thread.
+        /// </summary>
+        private static List<string> Freeze(IEnumerable<string> lines)
+        {
+            return lines == null ? null : lines.ToList();
+        }
+
         private List<PluginTypeInfo> CheckedTypes()
         {
             return _lvTypes.CheckedItems.Cast<ListViewItem>().Select(i => (PluginTypeInfo)i.Tag).ToList();
@@ -1639,101 +1649,44 @@ namespace PluginStepCodegen
             var types = CheckedTypes();
             var writeAmbiguous = _chkWriteAmbiguous.Visible && _chkWriteAmbiguous.Checked;
 
-            var written = new List<string>();
-            var unchanged = new List<string>();
-            var notFound = new List<string>();
-            var ambiguousTypes = new List<string>();
-            var failed = new List<string>();
-
-            foreach (var type in types)
+            // Both emitters are asked on this thread and the answers frozen, because they
+            // read the mode radios and the experimental options: the work below runs on a
+            // worker, where touching a control is not allowed.
+            var output = types.ToDictionary(t => t.Id, t => new ClassOutput
             {
-                try
+                Remarks = Freeze(Remarks(t)),
+                Attributes = Freeze(Attributes(t))
+            });
+
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Writing " + types.Count + (types.Count == 1 ? " class..." : " classes..."),
+                Work = (worker, args) => args.Result = SourceWriter.Write(
+                    folder, types, writeAmbiguous, t => output[t.Id]),
+                PostWorkCallBack = args =>
                 {
-                    List<string> ambiguous;
-                    var file = CodeFileWriter.FindFile(folder, type.ClassName, type.Namespace, out ambiguous);
-
-                    if (ambiguous != null)
+                    if (args.Error != null)
                     {
-                        if (!writeAmbiguous)
-                        {
-                            ambiguousTypes.Add(type.ClassName + " (" + ambiguous.Count + " files)");
-                            continue;
-                        }
-
-                        // Asked for by name: every file declaring the class gets the same output.
-                        // The splice only ever replaces this tool's own block, so the partial-class
-                        // case this exists for ends up documented on both halves.
-                        foreach (var candidate in ambiguous)
-                        {
-                            var label = type.ClassName + " (" + Relative(folder, candidate) + ")";
-                            if (CodeFileWriter.Update(candidate, type.ClassName, Remarks(type), Attributes(type)))
-                            {
-                                written.Add(label);
-                            }
-                            else
-                            {
-                                unchanged.Add(label);
-                            }
-                        }
-
-                        continue;
+                        MessageBox.Show(args.Error.Message, "Write failed",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
                     }
 
-                    if (file == null)
-                    {
-                        notFound.Add(type.ClassName);
-                        continue;
-                    }
+                    var report = (WriteReport)args.Result;
 
-                    if (CodeFileWriter.Update(file, type.ClassName, Remarks(type), Attributes(type)))
-                    {
-                        written.Add(type.ClassName);
-                    }
-                    else
-                    {
-                        unchanged.Add(type.ClassName);
-                    }
+                    // A tally of what happened to which file, not source, so it is left uncoloured.
+                    CsSyntaxHighlighter.Plain(_txtPreview, report.Format());
+                    MessageBox.Show(
+                        report.Written.Count + " file(s) updated, " + report.Unchanged.Count
+                        + " unchanged, " + report.Skipped + " skipped."
+                        + Environment.NewLine + Environment.NewLine
+                        + "A timestamped .bak copy was left beside every file that changed.",
+                        "Write complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                    // What was stale is now current, and the marks should say so without being asked.
+                    StartScan();
                 }
-                catch (Exception ex)
-                {
-                    failed.Add(type.ClassName + ": " + ex.Message);
-                }
-            }
-
-            var report = new StringBuilder();
-            Report(report, "Updated", written);
-            Report(report, "Already up to date", unchanged);
-            Report(report, "No matching .cs file", notFound);
-            Report(report, "Ambiguous, several files declare the class", ambiguousTypes);
-            Report(report, "Failed", failed);
-
-            // A tally of what happened to which file, not source, so it is left uncoloured.
-            CsSyntaxHighlighter.Plain(_txtPreview, report.ToString());
-            MessageBox.Show(
-                written.Count + " file(s) updated, " + unchanged.Count + " unchanged, "
-                + (notFound.Count + ambiguousTypes.Count + failed.Count) + " skipped."
-                + Environment.NewLine + Environment.NewLine
-                + "A timestamped .bak copy was left beside every file that changed.",
-                "Write complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            // What was stale is now current, and the marks should say so without being asked.
-            StartScan();
-        }
-
-        private static void Report(StringBuilder sb, string heading, List<string> items)
-        {
-            if (items.Count == 0)
-            {
-                return;
-            }
-
-            sb.AppendLine("// " + heading + " (" + items.Count + ")");
-            foreach (var item in items)
-            {
-                sb.AppendLine("//   " + item);
-            }
-
-            sb.AppendLine();
+            });
         }
 
         private void BtnCreateDefinitions_Click(object sender, EventArgs e)

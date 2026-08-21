@@ -220,38 +220,36 @@ function Get-CheckedTypes {
 }
 
 # --------------------------------------------------------------------- one Write press
-# The same loop as BtnWrite_Click: find the file, skip or write, tally what happened.
+# What BtnWrite_Click does, by calling what it calls: SourceWriter reads the folder once
+# and holds every class in the batch against it, and hands back the report the preview
+# pane prints. Only the output mode is decided here, which is the one thing the button
+# reads off its own radio buttons.
 function Invoke-WriteRun {
     param([string] $Folder, $Types, [ValidateSet('Attributes', 'Comment')] [string] $Mode, $Columns = $null)
 
-    $r = [ordered]@{ Updated = @(); Unchanged = @(); NotFound = @(); Ambiguous = @(); Failed = @() }
-    foreach ($type in $Types) {
-        try {
-            $ambiguous = $null
-            $file = [PluginStepCodegen.Logic.CodeFileWriter]::FindFile(
-                $Folder, $type.ClassName, $type.Namespace, [ref] $ambiguous)
+    # One object rather than two lists: a scriptblock returning a List<string> unrolls it
+    # into an object[] on the way out, which does not bind back to IEnumerable<string>.
+    $output = [Func[PluginStepCodegen.Logic.PluginTypeInfo, PluginStepCodegen.Logic.ClassOutput]] {
+        param($type)
 
-            if ($null -ne $ambiguous) { $r.Ambiguous += $type.TypeName; continue }
-            if ($null -eq $file) { $r.NotFound += $type.ClassName; continue }
-
-            # Assigned straight from the method calls: an if-expression would push the
-            # List<string> through the pipeline and unroll it into an object[], which
-            # does not bind to the IEnumerable<string> parameters below.
-            $remarks = $null
-            $attributes = $null
-            if ($Mode -eq 'Comment') { $remarks = [PluginStepCodegen.Logic.RemarksEmitter]::Emit($type, $Columns) }
-            if ($Mode -eq 'Attributes') { $attributes = [PluginStepCodegen.Logic.AttributeEmitter]::Emit($type) }
-
-            if ([PluginStepCodegen.Logic.CodeFileWriter]::Update($file, $type.ClassName, $remarks, $attributes)) {
-                $r.Updated += $type.ClassName
-            } else {
-                $r.Unchanged += $type.ClassName
-            }
-        } catch {
-            $r.Failed += "$($type.ClassName): $_"
-        }
+        $given = New-Object PluginStepCodegen.Logic.ClassOutput
+        if ($Mode -eq 'Comment') { $given.Remarks = [PluginStepCodegen.Logic.RemarksEmitter]::Emit($type, $Columns) }
+        if ($Mode -eq 'Attributes') { $given.Attributes = [PluginStepCodegen.Logic.AttributeEmitter]::Emit($type) }
+        $given
     }
-    $r
+
+    $typeList = New-Object 'System.Collections.Generic.List[PluginStepCodegen.Logic.PluginTypeInfo]'
+    foreach ($type in $Types) { $typeList.Add($type) }
+
+    $report = [PluginStepCodegen.Logic.SourceWriter]::Write($Folder, $typeList, $false, $output)
+
+    [ordered]@{
+        Updated   = @($report.Written)
+        Unchanged = @($report.Unchanged)
+        NotFound  = @($report.NotFound)
+        Ambiguous = @($report.Ambiguous)
+        Failed    = @($report.Failed)
+    }
 }
 
 # ------------------------------------------------------------------------- the checks

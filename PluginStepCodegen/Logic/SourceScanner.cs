@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace PluginStepCodegen.Logic
 {
@@ -45,33 +43,29 @@ namespace PluginStepCodegen.Logic
     /// <summary>
     /// Reads the source folder once and answers both directions of the question the two
     /// lists ask: which registered classes have a file here, and which plugin classes here
-    /// have no registration. Matching goes through <see cref="CodeFileWriter.FindInFiles"/>,
-    /// so a mark in the list is a promise about what a write would do.
+    /// have no registration. Matching goes through <see cref="SourceIndex.Find"/>, the same
+    /// call a write uses, so a mark in the list is a promise about what a write would do.
     /// </summary>
     public static class SourceScanner
     {
-        /// <summary>
-        /// A class declaration with its modifiers and base list. The base list runs to the
-        /// opening brace, which overshoots into constraint clauses on a generic class; for
-        /// deciding whether IPlugin or a known base name appears in it, overshooting is safe.
-        /// </summary>
-        private static readonly Regex Declaration = new Regex(
-            @"(?m)^[ \t]*(?<mods>(?:(?:public|internal|private|protected|abstract|sealed|static|partial|new)[ \t]+)*)class[ \t]+(?<name>[A-Za-z_]\w*)(?:\s*<[^>{\n]*>)?\s*(?::\s*(?<bases>[^{]*))?",
-            RegexOptions.Compiled);
-
         public static FolderScan Scan(string folder, IList<PluginTypeInfo> registered, ICollection<string> allRegisteredClassNames)
         {
-            var files = CodeFileWriter.EnumerateSources(folder)
-                .Select(f => new KeyValuePair<string, string>(f, ReadAllText(f)))
-                .Where(f => f.Value.Length > 0)
-                .ToList();
+            return Scan(SourceIndex.Build(folder), registered, allRegisteredClassNames);
+        }
 
-            var scan = new FolderScan { Folder = folder };
+        /// <summary>
+        /// The scan over a folder already read. Nothing in the tool needs this yet; it is
+        /// what keeps the reading and the deciding separable, and it is what the perf
+        /// harness times the two halves of.
+        /// </summary>
+        public static FolderScan Scan(SourceIndex index, IList<PluginTypeInfo> registered, ICollection<string> allRegisteredClassNames)
+        {
+            var scan = new FolderScan { Folder = index.Folder };
 
             foreach (var type in registered)
             {
                 List<string> ambiguous;
-                var file = CodeFileWriter.FindInFiles(files, type.ClassName, type.Namespace, out ambiguous);
+                var file = index.Find(type.ClassName, type.Namespace, out ambiguous);
 
                 var match = new ClassMatch { TypeId = type.Id };
                 if (ambiguous != null)
@@ -86,14 +80,14 @@ namespace PluginStepCodegen.Logic
                 else
                 {
                     match.Kind = MatchKind.Found;
-                    match.File = file;
-                    match.Code = files.First(f => f.Key == file).Value;
+                    match.File = file.Path;
+                    match.Code = file.Text;
                 }
 
                 scan.Matches[type.Id] = match;
             }
 
-            FindUnregistered(files, allRegisteredClassNames, scan.Unregistered);
+            scan.Unregistered.AddRange(FindUnregistered(index, allRegisteredClassNames));
             return scan;
         }
 
@@ -102,83 +96,60 @@ namespace PluginStepCodegen.Logic
         /// spreads from IPlugin through base lists - a plugin project's classes mostly derive
         /// from a shared base rather than implementing the interface themselves - and abstract
         /// classes are left out at the end: a base nobody can register is not a finding.
+        ///
+        /// The spread is a walk out from IPlugin rather than repeated passes over every class:
+        /// each name admits the classes naming it, and those names go on the queue. A pass per
+        /// name over a repository's worth of classes is what this used to cost.
         /// </summary>
-        private static void FindUnregistered(
-            List<KeyValuePair<string, string>> files,
-            ICollection<string> registeredClassNames,
-            List<LocalClass> results)
+        private static IEnumerable<LocalClass> FindUnregistered(SourceIndex index, ICollection<string> registeredClassNames)
         {
-            var declared = new List<Declared>();
-            foreach (var file in files)
+            // Which classes name a given identifier in their base list.
+            var derived = new Dictionary<string, List<DeclaredClass>>(StringComparer.Ordinal);
+            foreach (var declared in index.Declarations)
             {
-                foreach (Match m in Declaration.Matches(file.Value))
+                foreach (var baseName in declared.BaseNames)
                 {
-                    declared.Add(new Declared
+                    List<DeclaredClass> children;
+                    if (!derived.TryGetValue(baseName, out children))
                     {
-                        Name = m.Groups["name"].Value,
-                        Bases = m.Groups["bases"].Value,
-                        IsAbstract = m.Groups["mods"].Value.Contains("abstract"),
-                        File = file.Key
-                    });
+                        children = new List<DeclaredClass>();
+                        derived.Add(baseName, children);
+                    }
+
+                    children.Add(declared);
                 }
             }
 
-            // Names spread to a fixpoint: seed with everything whose base list says IPlugin,
-            // then admit anything deriving from an admitted name, until a pass adds nothing.
-            var plugins = new HashSet<string>(
-                declared.Where(d => Regex.IsMatch(d.Bases, @"\bIPlugin\b")).Select(d => d.Name));
+            // Names, not declarations: a plugin name admits everything declared under it, so
+            // one half of a partial class carrying the base list speaks for both halves.
+            var plugins = new HashSet<string>(StringComparer.Ordinal);
+            var queue = new Queue<string>();
+            queue.Enqueue("IPlugin");
 
-            bool grew;
-            do
+            while (queue.Count > 0)
             {
-                grew = false;
-                foreach (var d in declared)
+                List<DeclaredClass> children;
+                if (!derived.TryGetValue(queue.Dequeue(), out children))
                 {
-                    if (plugins.Contains(d.Name))
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (plugins.Any(p => Regex.IsMatch(d.Bases, @"\b" + Regex.Escape(p) + @"\b")))
+                foreach (var child in children)
+                {
+                    if (plugins.Add(child.Name))
                     {
-                        plugins.Add(d.Name);
-                        grew = true;
+                        queue.Enqueue(child.Name);
                     }
                 }
             }
-            while (grew);
 
-            results.AddRange(declared
+            return index.Declarations
                 .Where(d => plugins.Contains(d.Name)
                             && !d.IsAbstract
                             && !registeredClassNames.Contains(d.Name))
-                .GroupBy(d => d.Name)
-                .Select(g => new LocalClass { ClassName = g.Key, File = g.First().File })
-                .OrderBy(c => c.ClassName, StringComparer.OrdinalIgnoreCase));
-        }
-
-        private class Declared
-        {
-            public string Name;
-            public string Bases;
-            public bool IsAbstract;
-            public string File;
-        }
-
-        private static string ReadAllText(string path)
-        {
-            try
-            {
-                return File.ReadAllText(path);
-            }
-            catch (IOException)
-            {
-                return string.Empty;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return string.Empty;
-            }
+                .GroupBy(d => d.Name, StringComparer.Ordinal)
+                .Select(g => new LocalClass { ClassName = g.Key, File = g.First().File.Path })
+                .OrderBy(c => c.ClassName, StringComparer.OrdinalIgnoreCase);
         }
     }
 }
