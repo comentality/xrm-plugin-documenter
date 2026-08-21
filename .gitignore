@@ -17,3 +17,6 @@ tests/.ui/
 # Sandboxes write.ps1 copies the fixtures into, rebuilt on every run. Not under
 # tests/obj, because the tool skips any path with \obj\ in it as build output.
 tests/.write/
+
+# Working folder compat.ps1 builds its probes in, rebuilt on every run.
+tests/.compat/

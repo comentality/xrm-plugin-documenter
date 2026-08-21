@@ -76,9 +76,11 @@ named arguments is never wrapped, however long its filter list.
 ### Stages
 
 `Stages.PreValidation` (10), `Stages.PreOperation` (20), `Stages.MainOperation` (30),
-`Stages.PostOperation` (40). Stage 50 is retired and has no enum member in either the real
-package or the generated definitions, so it is emitted as `(Stages)50`, which compiles
-against both.
+`Stages.PostOperation` (40). Stage 50 is retired, and while both the real package and the
+generated definitions carry a member for it — `DepecratedPostOperation`, upstream's
+spelling — it is marked obsolete as an error, so naming it would not compile. It is
+emitted as `(Stages)50` instead, which does, and which also covers a stage neither side
+has heard of.
 
 ## Readable summary comment
 

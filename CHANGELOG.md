@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `XrmToolsMetaAttributes.cs` gains `Stages.DepecratedPostOperation = 50` — upstream's
+  spelling, upstream's `[Obsolete]` — which it had been missing. Nothing the tool writes
+  changes: a step at the retired stage 50 is still emitted as `(Stages)50`, because naming
+  that member is a compile error against the real package too.
+- The emitted attributes are now checked against the real `XrmTools.Meta.Attributes`
+  package rather than only against our copy of it. `tests\compat.ps1` compiles a corpus
+  covering every emitter decision against both, at four package versions, and compares the
+  constructed attributes property by property.
+
 ## 1.1.0
 
 - **"All columns except" phrasing** (experimental, off by default): an image or filter

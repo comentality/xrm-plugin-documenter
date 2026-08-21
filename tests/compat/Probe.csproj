@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Built once per definitions source by compat.ps1, which copies this file, Dump.cs and
+    the generated Corpus.g.cs into a working folder of its own and sets CompatSource.
+
+      -p:CompatSource=Package -p:XrmToolsVersion=1.2.0   the real NuGet package
+      -p:CompatSource=Local                              assets\XrmToolsMetaAttributes.cs
+
+    Default compile items are off because the two sources are mutually exclusive: globbing
+    would hand the Local file to the Package build as well, and the package declares those
+    same types, which is CS0101 before any of this gets to say anything useful.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Probe</AssemblyName>
+    <RootNamespace>Probe</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- The point of the exercise: anything the compiler has to say about the emitted
+         attributes is a failure, including a warning about using something obsolete. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- The package copies its XSDs into the consuming project folder. A throwaway probe
+         has no use for them. -->
+    <XrmToolsCopySchemas>false</XrmToolsCopySchemas>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Dump.cs" />
+    <Compile Include="Corpus.g.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CompatSource)' == 'Package'">
+    <PackageReference Include="XrmTools.Meta.Attributes" Version="$(XrmToolsVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CompatSource)' == 'Local'">
+    <Compile Include="XrmToolsMetaAttributes.cs" />
+  </ItemGroup>
+
+</Project>

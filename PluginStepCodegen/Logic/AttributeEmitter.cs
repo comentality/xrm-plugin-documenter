@@ -173,8 +173,10 @@ namespace PluginStepCodegen.Logic
                 case 20: return "Stages.PreOperation";
                 case 30: return "Stages.MainOperation";
                 case 40: return "Stages.PostOperation";
-                // Stage 50 is retired and has no enum member in either the real package
-                // or the generated one, so fall back to a cast that compiles against both.
+                // Stage 50 is retired. Both the real package and the generated definitions
+                // do have a member for it - DepecratedPostOperation, upstream's spelling -
+                // but it is [Obsolete(error: true)], so naming it would not compile. A cast
+                // is the only spelling that does, and it also covers a stage neither knows.
                 default: return "(Stages)" + stage.ToString(CultureInfo.InvariantCulture);
             }
         }

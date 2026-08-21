@@ -11,15 +11,23 @@
 //     values are identical to the published package, so this file can be
 //     deleted at any time and replaced by:
 //
-//         <PackageReference Include="XrmTools.Meta.Attributes" Version="1.0.57" />
+//         <PackageReference Include="XrmTools.Meta.Attributes" Version="1.2.0" />
+//
+//     That it is still identical is not a claim anybody has to take on trust.
+//     tests\compat.ps1 compiles the same generated attributes against this file
+//     and against the real package at 1.0.57, 1.1.3, 1.1.4 and whatever is
+//     latest, and compares the attributes the compiler bound and the objects the
+//     runtime constructs, property by property.
 //
 //     Do NOT keep both this file and the NuGet package in the same project:
 //     the package generates these same types into your compilation and you
 //     will get CS0101 (duplicate type) errors.
 //
-//     Types are declared 'internal' to match the package default. The package
-//     switches to public via <XrmToolsMetaAttributesUsePublicAccessibility>;
-//     if you need that here, change the modifiers below by hand.
+//     Types are declared 'internal', which is the package default from 1.1.4 on;
+//     up to 1.1.3 it shipped them public. The package switches via
+//     <XrmToolsMetaAttributesUsePublicAccessibility>; if you need that here,
+//     change the modifiers below by hand. Nothing about the attributes this tool
+//     writes depends on which one you pick.
 // </auto-generated>
 //------------------------------------------------------------------------------
 
@@ -48,7 +56,12 @@ namespace XrmTools.Meta.Attributes
         /// <summary>
         /// Occurs after the main system operation and within the database transaction.
         /// </summary>
-        PostOperation = 40
+        PostOperation = 40,
+        /// <summary>
+        /// post-operation, deprecated.
+        /// </summary>
+        [Obsolete("Not in use anymore according to Microsoft.", true)]
+        DepecratedPostOperation = 50
     }
 
     internal enum ExecutionMode

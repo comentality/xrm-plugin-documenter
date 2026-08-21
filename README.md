@@ -135,10 +135,20 @@ an assembly named Microsoft that is nothing of the sort.
 cd tests
 .\register.ps1      # build the assemblies, pack three solutions, import them
 .\verify.ps1        # confirm the environment matches the test matrix
+.\write.ps1         # run the real emit and write path over sandbox copies of the fixtures
+.\compat.ps1        # check what is emitted against the real XrmTools package from nuget
 .\unregister.ps1    # take it all away again
 .\xtb.ps1           # build the tool and open it in an XrmToolBox of its own
 .\ui.ps1            # screenshot the layout without XrmToolBox or a connection
 ```
+
+`write.ps1` and `compat.ps1` need no environment and no connection.
+
+`compat.ps1` is the one that keeps the tool's premise honest. It builds a corpus hitting
+every decision the emitter makes, compiles it against both the generated definitions file
+and the real `XrmTools.Meta.Attributes` package at four versions, and checks that the two
+do not merely both compile but mean the same thing — same constructor bound, same value in
+every property of the constructed attribute, defaults included.
 
 `xtb.ps1` puts a private XrmToolBox in `tests\.xtb` holding nothing but this tool, connects
 it to the same environment and opens it, so testing a change is one command and cannot

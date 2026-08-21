@@ -7,11 +7,17 @@ ways to get them, and you must pick exactly one.
 ## Option 1 — the NuGet package
 
 ```xml
-<PackageReference Include="XrmTools.Meta.Attributes" Version="1.0.57" />
+<PackageReference Include="XrmTools.Meta.Attributes" Version="1.2.0" />
 ```
 
 The upstream package. Use it if you are already using Xrm Tools, or want its source
 generators.
+
+Any version works. The package has had two shapes — up to 1.1.3 it added its attributes to
+your compilation as source files and declared them `public`, from 1.1.4 a source generator
+emits them and declares them `internal` unless you set
+`<XrmToolsMetaAttributesUsePublicAccessibility>`. Neither shape changes what this tool
+writes, and both are compiled against on every test run.
 
 ## Option 2 — the generated file
 
@@ -29,8 +35,14 @@ add the `PackageReference`, and the same source still compiles.
 The file is written UTF-8 with a BOM, and you are asked before an existing one is
 overwritten. It is meant to be committed — it is source, not a build artefact.
 
-Both routes are verified: the same generated attributes compile against the generated file
-and against the real package.
+Both routes are verified, and by more than eye. `tests\compat.ps1` builds a corpus that
+hits every decision the emitter makes, compiles it against the generated file and against
+the real package pulled from nuget.org at four versions, and then compares what the two
+builds produced: the constructor the compiler bound each attribute to, and every property
+of the attribute objects the runtime constructs. Those have to be identical. Defaults are
+the reason it goes as far as constructing them — the emitter leaves `ExecutionOrder` out
+when the rank is 1 *because* `StepAttribute` defaults it to 1, and only building one
+proves that is still true on both sides.
 
 ## Do not use both
 

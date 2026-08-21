@@ -99,6 +99,7 @@ copy of them to be wrong.
 | `unmanaged.ps1` | The other half of `register.ps1` and `unregister.ps1`: the two assemblies that are in no solution, written and deleted record by record. |
 | `dataverse.ps1` | An access token and four verbs. The only thing here that talks to the environment without going through `pac`. |
 | `write.ps1` | The write path, headlessly: rebuilds from `registrations.psd1` the objects `RegistrationQuery` would have read, runs the real find, emit and write code over sandbox copies of `src\` under `tests\.write`, and checks the reports and files against [Expected output](#expected-output) - including that the registered namespace settles every short name collision, that a second run settles, and that what was written compiles. No environment needed. |
+| `compat.ps1`, `compat\` | The emitted attributes against the real `XrmTools.Meta.Attributes` package, pulled from nuget.org. Everything else here judges the tool against this repository's own copy of the shape; this is the only thing that asks whether that copy is still upstream's. Needs the network, not an environment. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
@@ -194,6 +195,48 @@ do not:
 There is no zip to delete afterwards, so `unregister.ps1` deletes the records instead:
 images, steps, plugin types, then the assembly, because none of them will go while
 something still points at it.
+
+## Compatibility with the real package — `compat.ps1`
+
+Everything above judges the tool against this repository. The fixtures compile against
+`assets\XrmToolsMetaAttributes.cs`, which is our copy of the shape of
+`XrmTools.Meta.Attributes`, so the whole suite would go on passing for years after upstream
+renamed a property. `compat.ps1` is the one thing pointed the other way.
+
+It builds its own corpus rather than reusing `registrations.psd1`, because the two are
+after different things. The matrix pins what a real environment looks like; the corpus is
+one class per decision `AttributeEmitter` makes, including the ones no environment would
+hold still for — a step at the retired stage 50, a description carrying a quote and a
+newline, a filter list long enough to argue about wrapping. Sixteen classes, fifty
+attributes, all of it emitted by the tool's own DLL rather than typed out here.
+
+That corpus is then compiled five times: once against the definitions file, and once
+against the real package fetched from nuget.org at 1.0.57, 1.1.3, 1.1.4 and whatever is
+currently latest. Four versions rather than one because the package has had two shapes -
+source files declared `public` up to 1.1.3, a source generator declaring them `internal`
+from 1.1.4 - and the emitted attributes have to survive both. Warnings are errors, so an
+attribute that resolved to something deprecated fails here rather than in somebody's build.
+
+Compiling is only half of it. Each build also prints what it got, and the printouts have to
+match:
+
+- **DECLARED** — the constructor the compiler bound each attribute to and the arguments as
+  written. This is where the widest-overload rule is checked against a compiler rather than
+  against a regex, and where `[Image]` still following its `[Step]` after compilation shows.
+- **EVALUATED** — the attribute objects the runtime constructs, every readable property of
+  them. This is the section that earns the exercise. The emitter omits `ExecutionOrder` when
+  the rank is 1, `Name` and `EntityAlias` when they match the image type, and
+  `MessagePropertyName` when it is `Target`, and every one of those omissions is only correct
+  while the attribute's own default agrees. Nothing but constructing one can tell you it
+  still does — a default that drifted compiles perfectly and means something else.
+- **SURFACE** — every type each source brings into the compilation. A type the definitions
+  file declares has to match upstream member for member, and does not silently: that is the
+  check that would have caught `Stages` gaining `DepecratedPostOperation = 50`, which it did
+  before this script existed and which nobody noticed. Types only upstream has -
+  `[CustomApi]`, `[Dependency]`, `[Solution]` and the rest, which a step documenter has no
+  use for - are listed rather than failed on.
+
+Needs the network for the restores. Needs no Dataverse connection and no `register.ps1`.
 
 # Expected output
 
