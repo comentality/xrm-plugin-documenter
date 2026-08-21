@@ -23,3 +23,6 @@ tests/.compat/
 
 # Source trees perf.ps1 generates to time itself against, regenerated on every run.
 tests/.perf/
+
+# Windows and screenshots slow.ps1 drives, rewritten on every run.
+tests/.slow/

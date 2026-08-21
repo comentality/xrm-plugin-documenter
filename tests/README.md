@@ -17,6 +17,7 @@ assemblies: a second vendor, a registration with no source, an assembly with no 
 .\unregister.ps1    # take it all away again
 .\xtb.ps1           # build the tool and open it in an XrmToolBox of its own
 .\write.ps1         # check the write path headlessly, no environment needed
+.\slow.ps1          # check the window on a slow link, no environment needed
 ```
 
 All four use the active organization of the current `pac` auth profile; pass
@@ -101,6 +102,8 @@ copy of them to be wrong.
 | `write.ps1` | The write path, headlessly: rebuilds from `registrations.psd1` the objects `RegistrationQuery` would have read, runs the real find, emit and write code over sandbox copies of `src\` under `tests\.write`, and checks the reports and files against [Expected output](#expected-output) - including that the registered namespace settles every short name collision, that a second run settles, and that what was written compiles. No environment needed. |
 | `compat.ps1`, `compat\` | The emitted attributes against the real `XrmTools.Meta.Attributes` package, pulled from nuget.org. Everything else here judges the tool against this repository's own copy of the shape; this is the only thing that asks whether that copy is still upstream's. Needs the network, not an environment. |
 | `perf.ps1`, `PluginStepCodegen.PerfHarness\` | What the scan and the write *cost*, over generated repositories of 250 to 4000 files. Everything else here asks whether the answer is right; this asks whether waiting for it is reasonable. No environment needed. |
+| `slow.ps1`, `PluginStepCodegen.SlowHarness\` | The window *while* somebody waits: which buttons are live, what the status lines claim, and whether the answer that lands last belongs to the question asked last. Drives the real control against a Dataverse that answers in seconds. No environment needed. |
+| `harness\` | The sample environment and the window capture, shared by the UI and slow harnesses so the two cannot disagree about what "the sample" is. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
@@ -299,6 +302,55 @@ A note on cold caches: this runs against a tree Windows has just written, so the
 is warm. A first scan of a repository after a reboot pays real disk on top. The ratios are
 what transfer between machines; the milliseconds are a floor on what somebody will see, not
 a ceiling.
+
+## A slow link — `slow.ps1`
+
+`perf.ps1` asks what waiting costs. This asks what the window is *doing* while somebody
+waits.
+
+```powershell
+.\slow.ps1                          # every scenario
+.\slow.ps1 -Scenario cancel         # one
+.\slow.ps1 -NoBuild                 # reuse the last build
+```
+
+It matters because of one detail of XrmToolBox: `WorkAsync` draws a small panel in the
+middle of the tool, not a sheet over the tab. Nothing is disabled and nothing is modal, so
+for as long as a fetch takes, every button, box and field is live. On a fast connection that
+window is milliseconds wide and nothing gets into it. On a slow one it is most of a session,
+and everything a person does in it — pressing Load again, ticking a second assembly,
+pressing Refresh, giving up and closing the tab — lands in a tool that has half an answer.
+
+The harness hosts the real control and hands it a fake `IOrganizationService` through the
+connection property XrmToolBox would have set, so `RegistrationQuery` runs for real and a
+plugin type fetch costs its four round trips here too. Latency is scriptable per call, so a
+scenario can arrange for the *older* of two queries to answer last. Every call is logged —
+which table, how many ids, when it started and when it ended — and that log is where the
+questions latency raises get answered: was the same assembly asked for twice, was anything
+asked at all after the user gave up, and was there ever more than one question on the wire.
+
+Gestures are performed on the controls (`PerformClick`, a box ticked, a path typed) from a
+timer on the UI thread, because that is where the tool lives: `WorkAsync` marshals its
+callback back there and the debounce timers tick there. Each scenario gets a window, a
+source folder and a **screenshot per gesture** of its own under `tests\.slow`, so a failure
+is something to look at rather than only a line to read. A sweeper closes whatever modal the
+tool puts up and writes down that it did, which is also how "one write, one report" is
+checked.
+
+| Scenario | What it holds the tool to |
+|---|---|
+| `close-during-load` | Closing the tab mid-fetch does not throw. The answer still arrives, at a control that is gone. |
+| `refresh-overtakes-load` | A class registered between two fetches ends up in the list. The older answer must not land last and be believed. |
+| `tick-while-loading` | Three assemblies ticked one at a time cost one query each, not one query per tick, and never two at once. |
+| `write-guarded` | Write is dead while an assembly is loading and dead during its own write. One press, one report. |
+| `partial-truth` | While a fetch is out, the counts say so and nothing is called "in folder, not registered". |
+| `load-twice` | Three presses of Load, one query. |
+| `cancel` | The panel's Cancel stops the round trips that had not happened yet, records nothing, and leaves the assembly askable again. |
+| `error-under-latency` | A timeout is readable after the dialog is gone, and is not remembered as an answer. |
+
+All eight failed against the code that prompted them, which is why they exist. The exit code
+is the number of scenarios with findings, and `report.txt` beside the shots holds the same
+lines the console printed.
 
 # Expected output
 
