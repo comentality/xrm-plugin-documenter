@@ -11,7 +11,7 @@
     <icon>icon.png</icon>
     <readme>docs\README.md</readme>
     <description>Document Dataverse plugin step registrations directly in your C# source. Reads registered steps and images from the connected environment and writes them back into your plugin classes as Xrm Tools compatible [Plugin], [Step] and [Image] attributes.</description>
-    <releaseNotes>v1.0.0 - Initial release: read registered plugin steps and images, emit Xrm Tools compatible attributes into matching .cs files, and generate a dependency-free attribute definitions file.</releaseNotes>
+    <releaseNotes>v1.1.0 - "All columns except" phrasing (experimental), source folder scan with per-class file status, write-to-both-files for ambiguous classes, togglable preview, refresh, namespace-aware file matching. Full changelog: https://github.com/comentality/xrm-plugin-step-codegen/blob/main/CHANGELOG.md</releaseNotes>
     <tags>XrmToolBox Dynamics365 CRM PowerPlatform Dataverse Plugin Registration Documentation Codegen XrmTools</tags>
     <dependencies>
       <group targetFramework=".NETFramework4.8">

@@ -2,74 +2,42 @@
 
 ## 1.1.0
 
-- **A near-complete column list can be said as its exceptions.** Switched on, the comment
-  mode measures each list against its entity's current columns, and an image or filter
-  that covers nearly all of them reads `(all columns except: creditlimit, ilac_legacyid,
-  ...)` instead of reciting seventy names — used only while the exceptions stay at most a
-  quarter of what is included. A list that turns out to be every column reads `(all 75
-  columns, written out)`, distinct from `(all columns)`, because a spelled-out list is
-  pinned to the day it was made while an empty one follows the table. A list carrying a
-  column the entity no longer has is left verbatim, so the stale name stays visible.
-- **The dagger.** A † button in the write toolbar opens the experimental settings:
-  experiments that run as opt-ins until they earn being the default. The exceptions
-  phrasing above is the first of them, off by default, remembered across sessions.
+- **"All columns except" phrasing** (experimental, off by default): an image or filter
+  covering nearly all of an entity's columns reads `(all columns except: creditlimit,
+  ilac_legacyid)` instead of reciting seventy names. A list that covers every column reads
+  `(all 75 columns, written out)`; a stale column name is left verbatim so it stays visible.
+- **Experimental settings** behind a new † button in the write toolbar, remembered across
+  sessions.
 
   ![The dagger button beside the preview toggle](assets/changelog-guru-dagger.png)
 
-- **A third column holds the source folder against the registrations.** The folder picker
-  moved there from above the preview, and as soon as a folder and loaded classes exist the
-  tool scans in the background and keeps a ledger: which registered classes have a `.cs`
-  file (*current*, *stale* — the tool's output is present but no longer matches the
-  registration — or nothing written yet), which have **no file**, which are **ambiguous**,
-  and which plugin classes sit **in the folder with no registration** behind them. Every
-  class row carries the verdict as a glyph (✓ ✎ ✗ ⚠), every assembly row a roll-up
-  (`4/5 ⚠`), and selecting a row in either list highlights it in the other. What used to be
-  discovered by pressing *Write to Files* is now on screen before it.
-- **Write to both files when ambiguous.** A checkbox that only appears when the scan has
-  found an ambiguity. Off, an ambiguous class is skipped as before; on, every file
-  declaring the class gets the same output — the splice replaces only the tool's own
-  block, so the partial-class case the ambiguity usually is ends up documented on both
-  halves.
-- **The preview is togglable.** A *Preview ▸* button in the write toolbar collapses the
-  code view and hands its width to the source column, for the sessions that are about
-  auditing the marks rather than reading what would be written; *◂ Preview* brings it
-  back. The write controls sit above both panes and stay put either way.
-- **Refresh.** Rereads the assemblies and their steps without resetting the session:
-  what is ticked, what is excluded, the filter and the folder all survive. For the loop
-  the tool lives in — register from the IDE, come back, refresh, write.
-- The hint above the buttons now says what a write would do (`Will write 5 classes ·
-  2 skipped (1 no file, 1 ambiguous)`) instead of going quiet once the folder was valid.
-
-- **The registered namespace now settles a short-name tie.** When several `.cs` files
-  declare a class of the same short name, the file whose `namespace` declaration matches
-  the namespace the type was registered under is the one written, provided exactly one
-  file does. Two projects in one tree with a class name in common no longer come back as
-  *Ambiguous*. A tie the namespace cannot settle — a partial class spanning files, the
-  same namespace declared twice, a namespace declared in nested form — is still reported
-  as ambiguous and no file is touched.
+- **Source folder status column**: the folder picker moved into a third column that scans
+  in the background and marks every class — current ✓, stale ✎, no file ✗, ambiguous ⚠ —
+  with per-assembly roll-ups and cross-highlighting between the lists.
+- **Write to both files when ambiguous** (optional): every file declaring the class gets
+  the same block, so a partial class is documented on both halves.
+- **Togglable preview**: collapse the code pane to give its width to the source column.
+- **Refresh**: rereads assemblies and steps without losing ticks, filter, or folder.
+- **Namespace-aware file matching**: a short-name tie between files is settled by the
+  registered namespace, so same-named classes in two projects no longer come back
+  ambiguous.
+- The hint above the buttons now says what a write would do
+  (`Will write 5 classes · 2 skipped (1 no file, 1 ambiguous)`).
 
 ## 1.0.0
 
 First release.
 
-Reads the plugin steps and images registered in the connected Dataverse environment and
-writes them into your C# source, as [Xrm Tools](https://github.com/rezanid/xrmtools)
-`[Plugin]`, `[Step]` and `[Image]` attributes or as a readable summary comment.
-
-- **Assembly list** defaults to the unmanaged assemblies — the plugin somebody is
-  writing — with **Microsoft's** and **Managed** as switches carrying the count of what
-  they hold back. Microsoft's own are told apart by strong name signature rather than by
-  name, so a first party app shipped under its own name is still recognised and an
-  assembly of yours called `Microsoft.*` is not.
-- **Two output modes**, independent of each other: attributes that compile, and a
-  `<remarks>` block that carries the two facts no attribute can express — a disabled step
-  and the user a step impersonates.
-- **Writes into existing files** above the class declaration, replacing only its own
-  output and leaving your summaries, your other attributes and the class body alone. Every
-  changed file gets a timestamped `.bak` beside it.
-- **Create Attribute Definitions File** writes a dependency-free
-  `XrmToolsMetaAttributes.cs`, so the emitted attributes compile without the
-  `XrmTools.Meta.Attributes` package or the Visual Studio extension.
-- Nothing is ever written to the environment; a read-only role is enough.
+- Reads the plugin steps and images registered in the connected environment and writes
+  them into your C# source, as [Xrm Tools](https://github.com/rezanid/xrmtools)
+  `[Plugin]`, `[Step]` and `[Image]` attributes or as a readable summary comment.
+- Assembly list defaults to the unmanaged assemblies; **Microsoft's** and **Managed** are
+  switches carrying the count of what they hold back.
+- Writes above the class declaration, replacing only its own block; every changed file
+  gets a timestamped `.bak` beside it.
+- **Create Attribute Definitions File** emits a dependency-free
+  `XrmToolsMetaAttributes.cs`, so the attributes compile without the
+  `XrmTools.Meta.Attributes` package.
+- Read-only: nothing is ever written to the environment.
 
 Requires XrmToolBox 1.2025.7 or later.
