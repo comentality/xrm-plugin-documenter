@@ -462,15 +462,18 @@ that turns out to be. `verify.ps1` recomputes the same lists from the same metad
 on everything but the counts.
 
 With the setting on, the comment collapses to the exceptions; the third step's list
-holds a column contact does not have — the shape left behind when a custom column is
-deleted after registration — and stays verbatim, because the stale name is the finding.
-`N` below is the live count of task's updatable columns (10 in the headless stand-in):
+holds `createdon`, which is real but not updatable and so is outside the updatable set a
+filter is measured against — the list stays verbatim, because the odd name out is the
+finding. (A deleted column's leftover name would take the same path, but cannot be
+*registered*: the Web API writes a dependency per name in `filteringattributes` and
+refuses one that does not exist, which this suite found out the empirical way.) `N`
+below is the live count of task's updatable columns (10 in the headless stand-in):
 
 ```csharp
 /// Sync Post-Update of annotation (order 1): (all columns except notetext, subject)
 ///     PreImage: (all columns except documentbody)
 /// Sync Post-Update of task (order 2): (all N columns, written out)
-/// Sync Post-Update of contact (order 3): cmtl_legacyscore, firstname, lastname
+/// Sync Post-Update of contact (order 3): createdon, firstname, lastname
 ```
 
 With it off — the default — the first two steps and the image are recited exactly as

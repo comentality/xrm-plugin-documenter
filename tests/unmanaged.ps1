@@ -91,7 +91,8 @@ function Register-Unmanaged {
     # what makes the near-complete filter genuinely near-complete in this environment
     # rather than in whichever one the fixture was written against.
     $columns = @{}
-    foreach ($entity in Get-DynamicColumnEntities @{ Assemblies = $assemblies }) {
+    $dynamicEntities = Get-DynamicColumnEntities @{ Assemblies = $assemblies }
+    foreach ($entity in $dynamicEntities) {
         Write-Host "Reading the current columns of $entity..."
         $columns[$entity] = Get-DataverseEntityColumns $entity
     }

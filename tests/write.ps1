@@ -411,11 +411,12 @@ Check 'comment with columns again: all sixteen already up to date' `
     (@($c2.Unchanged).Count -eq 16 -and @($c2.Updated).Count -eq 0) "($(Format-Report $c2))"
 
 # The three shapes, one step each: near-complete says its exceptions, complete says it
-# is complete, and the stale name keeps its list verbatim - staleness is the finding.
+# is complete, and a name outside the universe - createdon is real but not updatable -
+# keeps its list verbatim, because the odd name out is the finding.
 Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except notetext, subject)'
 Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all columns except documentbody)'
 Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' '(all 10 columns, written out)'
-Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' 'cmtl_legacyscore, firstname, lastname'
+Test-FileContains $sandboxC 'TestPlugins\Plugins\NearlyAllColumns.cs' 'createdon, firstname, lastname'
 
 # The quarter rule, judged with the universe present rather than absent: ten of account's
 # twenty five stand-in columns is nowhere near "all", so the list stays a list.

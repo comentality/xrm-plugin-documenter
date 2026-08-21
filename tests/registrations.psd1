@@ -327,14 +327,18 @@
                     Message = 'Update'; Entity = 'task'; Stage = 40; Mode = 0; Rank = 2
                     FilterAll = $true
                 }
-                # A filter carrying a column contact does not have - the shape left behind
-                # when a custom column is deleted after the step was registered. The stale
-                # name is the finding, so the list must stay verbatim however near-complete
-                # the rest of it is.
+                # A filter carrying a name outside the universe it is measured against:
+                # createdon is a real column - the Web API writes a dependency per name and
+                # refuses one that does not exist, so a deleted column's leftover name
+                # cannot be registered from here - but it is not updatable, so it is not in
+                # the updatable set the tool diffs a filter against. The odd name out is
+                # the finding, and the list must stay verbatim however near-complete the
+                # rest of it is; a stale name left behind by a managed layer gets the same
+                # treatment through the same code.
                 @{
                     Id = '17'; Type = 'TestPlugins.NearlyAllColumns'
                     Message = 'Update'; Entity = 'contact'; Stage = 40; Mode = 0; Rank = 3
-                    Filter = 'cmtl_legacyscore,firstname,lastname'
+                    Filter = 'createdon,firstname,lastname'
                 }
 
                 # TestPlugins.NeverRegistered and TestPlugins.Beta.Duplicate are deliberately

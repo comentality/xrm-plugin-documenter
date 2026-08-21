@@ -188,9 +188,13 @@ function Get-ImageAttributes {
 function Get-DynamicColumnEntities {
     param([hashtable] $Manifest)
 
-    $entities = @(foreach ($entry in Get-AllSteps $Manifest) {
+    # Assigned before the loop: the comma-wrapped return survives a foreach expression
+    # un-unrolled, which would hand the whole list to one iteration.
+    $allSteps = Get-AllSteps $Manifest
+    $entities = @(foreach ($entry in $allSteps) {
+        $images = Get-StepImages $entry.Step
         $dynamic = $entry.Step.ContainsKey('FilterAll') -or $entry.Step.ContainsKey('FilterAllExcept') -or
-            @(Get-StepImages $entry.Step | Where-Object { $_.ContainsKey('AttributesAllExcept') }).Count -gt 0
+            @($images | Where-Object { $_.ContainsKey('AttributesAllExcept') }).Count -gt 0
         if ($dynamic) { Get-StepEntity $entry.Step }
     })
     , @($entities | Sort-Object -Unique)
