@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - **A near-complete column list can be said as its exceptions.** Switched on, the comment
   mode measures each list against its entity's current columns, and an image or filter
