@@ -1068,13 +1068,14 @@ Worth knowing what the suite does *not* pin, so a gap is not mistaken for a pass
 - **A real Microsoft signature.** See above; it cannot be faked and is left to the
   environment's own first party assemblies.
 - **`isolationmode` "None".** Online forces sandbox for everything that is not Microsoft's,
-  so the other value in the Isolation column is not reachable in a Developer environment.
+  so the tooltip line about full trust is not reachable in a Developer environment.
 - **`ishidden` assemblies.** The tool filters them out and the fixture cannot make
   one: `IsHidden` is not in the solution schema for a plugin assembly.
 - **Custom API handlers and workflow activities.** Both are plugin types with no
-  `sdkmessageprocessingstep`, so the tool drops them and is silently blind to them. That is
-  a gap in the tool rather than in the fixture, and pinning it should follow a decision
-  about what it ought to do.
+  `sdkmessageprocessingstep`, so the tool has nothing to document for them. It is no longer
+  silent about them - their files are listed under **Registered, no steps** rather than
+  called unregistered - but it still cannot say what they are. Pinning that should follow a
+  decision about what it ought to do.
 - **Assemblies delivered as a plugin package.** The NuGet route registers a
   `pluginpackage`, which nothing in the tool queries.
 - **An unmanaged assembly that is also named Microsoft.** `IsMicrosoft` is asked before

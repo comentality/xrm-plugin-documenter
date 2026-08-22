@@ -12,12 +12,25 @@
 
   ![The two groups, side by side](assets/changelog-no-steps.png)
 
-- **The assembly rows say what their Source cell means.** Three of its states are blanks
-  that look alike — not ticked yet, no source folder chosen, nothing registered in the
-  assembly — and the roll-up's glyph says how bad the news is without saying which news it
-  is. Every state now answers when the row is hovered, and an assembly with no step
-  registered against anything in it reads `—` as soon as it is ticked, rather than staying
-  blank until a folder is chosen.
+- **The assembly list traded a constant for an answer.** Its **Isolation** column read
+  `Sandbox` down every row you were shown — Dataverse online forces it on everything that is
+  not Microsoft's, and the **Microsoft's** switch hides the rows where it does not — so a
+  quarter of the pane was spent saying the same word. It is gone, an assembly registered in
+  full trust says so in its tooltip, and the Source column got the width. What it spends it
+  on is the thing the roll-up would not say: `3/4 ✗` told you how bad it was without telling
+  you which, and *no file* and *declared in two files* are two different afternoons.
+
+  ![The assembly rows, naming the trouble](assets/changelog-assembly-rollup.png)
+
+  Its three empty states — not ticked yet, no source folder chosen, nothing registered in the
+  assembly — also answer when hovered, and the last of them reads `—` as soon as the row is
+  ticked rather than staying blank until a folder is chosen.
+
+- **Stale files have a group of their own.** They sat inside **Matched**, marked with a word
+  on the row, which is no way to answer "what have I got to rewrite" — the one question in
+  that pane you can act on with a single press.
+
+  ![The Stale group, under Matched](assets/changelog-stale-group.png)
 
 - **The tool behaves itself on a slow link.** XrmToolBox draws a small panel in the middle of
   a tool while it waits on the environment — not a sheet over the whole tab — so every button

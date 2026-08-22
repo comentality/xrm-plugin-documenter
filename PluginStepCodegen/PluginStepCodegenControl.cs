@@ -172,6 +172,13 @@ namespace PluginStepCodegen
         /// <summary>Set while one list's selection is being echoed into the other.</summary>
         private bool _syncingSelection;
 
+        /// <summary>
+        /// Classes whose file carries this tool's output and no longer agrees with the
+        /// registration, worked out once per render and read by all three panes. Recomputing it
+        /// per pane would splice every matched file twice more for the same answer.
+        /// </summary>
+        private readonly HashSet<Guid> _staleTypes = new HashSet<Guid>();
+
         private static readonly Color GlyphGreen = Color.FromArgb(26, 127, 55);
         private static readonly Color GlyphAmber = Color.FromArgb(154, 103, 0);
         private static readonly Color GlyphRed = Color.Firebrick;
@@ -338,12 +345,15 @@ namespace PluginStepCodegen
                 Font = _listFont
             };
             _lvAssemblies.Columns.Add("Assembly");
-            _lvAssemblies.Columns.Add("Isolation");
+            // No column for isolation. Dataverse online forces the sandbox on everything that is
+            // not Microsoft's, and the Microsoft switch hides the rows where that is not so, which
+            // left a quarter of the pane reading "Sandbox" all the way down. The rare answer is
+            // worth having, and the row's tooltip is where it now lives.
             _lvAssemblies.Columns.Add("Source");
             // The floor sits just under what the pane's own minimum leaves once a scrollbar has
             // taken its share, so the fallback to sideways scrolling is reserved for a pane
             // narrower than the splitter will allow.
-            ShareWidthBetweenColumns(_lvAssemblies, 230, 0.52f, 0.24f, 0.24f);
+            ShareWidthBetweenColumns(_lvAssemblies, 230, 0.55f, 0.45f);
             _lvAssemblies.ItemChecked += LvAssemblies_ItemChecked;
 
             _checkSettled = new Timer { Interval = 120 };
@@ -957,7 +967,6 @@ namespace PluginStepCodegen
                     Checked = _checkedAssemblies.Contains(assembly.Id),
                     UseItemStyleForSubItems = false
                 };
-                item.SubItems.Add(assembly.IsolationMode == 2 ? "Sandbox" : "None");
                 item.SubItems.Add(string.Empty);
                 _lvAssemblies.Items.Add(item);
             }
@@ -1606,6 +1615,7 @@ namespace PluginStepCodegen
         {
             var scan = _scan;
 
+            _staleTypes.Clear();
             _lvTypes.BeginUpdate();
             foreach (ListViewItem item in _lvTypes.Items)
             {
@@ -1613,10 +1623,15 @@ namespace PluginStepCodegen
                 ClassMatch match;
                 string glyph = string.Empty, words = string.Empty, detail = null;
                 var color = SystemColors.GrayText;
+                bool stale;
 
                 if (scan != null && scan.Matches.TryGetValue(type.Id, out match))
                 {
-                    Describe(type, match, out glyph, out words, out detail, out color);
+                    Describe(type, match, out glyph, out words, out detail, out color, out stale);
+                    if (stale)
+                    {
+                        _staleTypes.Add(type.Id);
+                    }
                 }
 
                 var cell = item.SubItems[2];
@@ -1642,8 +1657,10 @@ namespace PluginStepCodegen
         }
 
         /// <summary>One class's verdict, in every voice that reports it.</summary>
-        private void Describe(PluginTypeInfo type, ClassMatch match, out string glyph, out string words, out string detail, out Color color)
+        private void Describe(PluginTypeInfo type, ClassMatch match, out string glyph, out string words,
+            out string detail, out Color color, out bool stale)
         {
+            stale = false;
             switch (match.Kind)
             {
                 case MatchKind.NotFound:
@@ -1664,7 +1681,8 @@ namespace PluginStepCodegen
                 default:
                     var state = StateOf(type, match.Code);
                     var file = Relative(_scan.Folder, match.File);
-                    if (state == CodeFileWriter.WriteState.Stale)
+                    stale = state == CodeFileWriter.WriteState.Stale;
+                    if (stale)
                     {
                         glyph = GlyphStale;
                         words = "stale";
@@ -1695,13 +1713,13 @@ namespace PluginStepCodegen
             foreach (ListViewItem item in _lvAssemblies.Items)
             {
                 var assembly = (AssemblyInfo)item.Tag;
-                var cell = item.SubItems[2];
+                var cell = item.SubItems[1];
 
                 if (_typesInFlight.Contains(assembly.Id))
                 {
                     cell.Text = "…";
                     cell.ForeColor = SystemColors.GrayText;
-                    item.ToolTipText = "Reading its registered classes.";
+                    item.ToolTipText = RowNote(assembly, "Reading its registered classes.");
                     continue;
                 }
 
@@ -1709,7 +1727,7 @@ namespace PluginStepCodegen
                 if (!_typesByAssembly.TryGetValue(assembly.Id, out types))
                 {
                     cell.Text = string.Empty;
-                    item.ToolTipText = "Tick it to read what is registered in it.";
+                    item.ToolTipText = RowNote(assembly, "Tick it to read what is registered in it.");
                     continue;
                 }
 
@@ -1721,18 +1739,19 @@ namespace PluginStepCodegen
                 {
                     cell.Text = "—";
                     cell.ForeColor = SystemColors.GrayText;
-                    item.ToolTipText = "Registered, but no step is registered against any class in it.";
+                    item.ToolTipText = RowNote(assembly, "Registered, but no step is registered against any class in it.");
                     continue;
                 }
 
                 if (scan == null)
                 {
                     cell.Text = string.Empty;
-                    item.ToolTipText = types.Count + " classes. Choose the source folder to match them against.";
+                    item.ToolTipText = RowNote(assembly,
+                        types.Count + " classes. Choose the source folder to match them against.");
                     continue;
                 }
 
-                int found = 0, missing = 0, ambiguous = 0;
+                int found = 0, missing = 0, ambiguous = 0, stale = 0;
                 foreach (var type in types)
                 {
                     ClassMatch match;
@@ -1741,23 +1760,48 @@ namespace PluginStepCodegen
                         continue;
                     }
 
-                    if (match.Kind == MatchKind.Found) found++;
+                    if (match.Kind == MatchKind.Found)
+                    {
+                        found++;
+                        if (_staleTypes.Contains(type.Id)) stale++;
+                    }
                     else if (match.Kind == MatchKind.Ambiguous) ambiguous++;
                     else missing++;
                 }
 
-                var glyph = missing > 0 ? GlyphMissing : ambiguous > 0 ? GlyphAmbiguous : GlyphFound;
-                cell.Text = found + "/" + types.Count + " " + glyph;
-                cell.ForeColor = missing > 0 ? GlyphRed : ambiguous > 0 ? GlyphAmber : GlyphGreen;
+                // The worst of it in words rather than as a mark. A glyph says how bad without
+                // saying which, and "no file" and "declared in two files" are two different
+                // afternoons - one is a folder pointed somewhere else, the other is a decision
+                // only the reader can make. Said here rather than found by opening the group.
+                // The words are the class list's own, so the two panes never disagree.
+                var worst = missing > 0 ? missing + " not found"
+                    : ambiguous > 0 ? ambiguous + " ambiguous"
+                    : stale > 0 ? stale + " stale"
+                    : string.Empty;
 
-                // The glyph says how bad it is and never which it is: two classes with no file and
-                // two declared twice wear the same mark. Asked here rather than opened to find out.
+                cell.Text = found + "/" + types.Count + (worst.Length == 0 ? string.Empty : " · " + worst);
+                cell.ForeColor = missing > 0 ? GlyphRed : ambiguous > 0 || stale > 0 ? GlyphAmber : GlyphGreen;
+
+                // The cell has room for the worst one only; the rest are here.
                 var trouble = new List<string>();
                 if (missing > 0) trouble.Add(missing + " with no file");
                 if (ambiguous > 0) trouble.Add(ambiguous + " declared in more than one file");
-                item.ToolTipText = found + " of " + types.Count + " classes matched to a file"
-                    + (trouble.Count == 0 ? "." : " · " + string.Join(" · ", trouble));
+                if (stale > 0) trouble.Add(stale + " written before and now out of date");
+                item.ToolTipText = RowNote(assembly, found + " of " + types.Count + " classes matched to a file"
+                    + (trouble.Count == 0 ? "." : " · " + string.Join(" · ", trouble)));
             }
+        }
+
+        /// <summary>
+        /// A row's tooltip: what its cell means, and the one thing the Isolation column was there
+        /// for. Sandbox is every row's answer on Dataverse online, which is why it is no longer a
+        /// column; anything else is a real surprise and is worth the line.
+        /// </summary>
+        private static string RowNote(AssemblyInfo assembly, string state)
+        {
+            return assembly.IsolationMode == 2
+                ? state
+                : state + "\r\nRegistered outside the sandbox, in full trust.";
         }
 
         /// <summary>
@@ -1780,7 +1824,13 @@ namespace PluginStepCodegen
                     .Select(t => new { Type = t, Match = scan.Matches[t.Id] })
                     .ToList();
 
+                // Stale is a state of a matched file rather than a fourth kind of match, and it
+                // is the only one the reader can act on with one press: these are exactly the
+                // files Write is about to change. Inside "Matched" it was a word on a row, which
+                // is no way to answer "what have I got to rewrite".
                 var matched = verdicts.Where(v => v.Match.Kind == MatchKind.Found).ToList();
+                var stale = matched.Where(v => _staleTypes.Contains(v.Type.Id)).ToList();
+                var current = matched.Where(v => !_staleTypes.Contains(v.Type.Id)).ToList();
                 var missing = verdicts.Where(v => v.Match.Kind == MatchKind.NotFound).ToList();
                 var ambiguous = verdicts.Where(v => v.Match.Kind == MatchKind.Ambiguous).ToList();
 
@@ -1794,7 +1844,8 @@ namespace PluginStepCodegen
                 // as long as the rows are held back.
                 var waiting = Outstanding;
 
-                var groupMatched = new ListViewGroup("Matched (" + matched.Count + ")");
+                var groupMatched = new ListViewGroup("Matched (" + current.Count + ")");
+                var groupStale = new ListViewGroup("Stale (" + stale.Count + ")");
                 var groupMissing = new ListViewGroup("Not found (" + missing.Count + ")");
                 var groupAmbiguous = new ListViewGroup("Ambiguous (" + ambiguous.Count + ")");
                 // Split rather than counted together: one is a class nobody registered, the other
@@ -1811,16 +1862,18 @@ namespace PluginStepCodegen
                     : "In folder, not registered (" + unregistered.Count + ")");
                 _lvSource.Groups.AddRange(new[]
                 {
-                    groupMatched, groupMissing, groupAmbiguous, groupStepless, groupUnregistered
+                    groupMatched, groupStale, groupMissing, groupAmbiguous, groupStepless, groupUnregistered
                 });
 
                 foreach (var v in matched)
                 {
                     string glyph, words, detail;
                     Color color;
-                    Describe(v.Type, v.Match, out glyph, out words, out detail, out color);
+                    bool isStale;
+                    Describe(v.Type, v.Match, out glyph, out words, out detail, out color, out isStale);
 
-                    var item = new ListViewItem(Relative(scan.Folder, v.Match.File), groupMatched)
+                    var item = new ListViewItem(Relative(scan.Folder, v.Match.File),
+                        isStale ? groupStale : groupMatched)
                     {
                         Tag = v.Type.Id,
                         ToolTipText = v.Type.TypeName + "\r\n" + detail,
@@ -1919,7 +1972,7 @@ namespace PluginStepCodegen
                 {
                     case MatchKind.Found:
                         matched++;
-                        if (StateOf(type, match.Code) == CodeFileWriter.WriteState.Stale)
+                        if (_staleTypes.Contains(type.Id))
                         {
                             stale++;
                         }

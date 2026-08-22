@@ -1,4 +1,4 @@
-# Choosing assemblies
+﻿# Choosing assemblies
 
 An environment carries dozens of plugin assemblies and one or two of yours. **Load
 Assemblies** loads all of them and then shows you the short list, because the long one is
@@ -68,12 +68,27 @@ The **All** box speaks for the rows on screen, not for the environment, so filte
 your own name and hitting **All** means all of yours. When some but not all of the visible
 rows are ticked it goes indeterminate rather than checked.
 
-## The Isolation column
+## The Source column
 
-`Sandbox` or `None`, straight off the assembly record. Dataverse online forces sandbox
-isolation on everything that is not Microsoft's, so in practice every row of yours says
-Sandbox; `None` shows up on-premises and on assemblies Microsoft ships into the platform
-itself.
+The assembly's share of what the source folder scan found, as `matched/total` and the worst
+thing among them — `8/8`, `7/8 · 1 not found`, `6/8 · 2 ambiguous`, `8/8 · 1 stale`. Green
+means there is nothing to say, amber that something needs a decision, red that a class has
+no file at all. Hovering the row gives the whole breakdown rather than the worst of it.
+
+Three of its states are empty rather than a count, and the row's tooltip says which:
+
+| Cell | Means |
+|---|---|
+| *(blank)* | Not ticked yet, or no source folder chosen |
+| `…` | Its classes are still being read |
+| `—` | Registered, but no step is registered against anything in it |
+
+## Isolation
+
+There is no column for it. Dataverse online forces sandbox isolation on everything that is
+not Microsoft's, so the column said `Sandbox` down every row you were shown while the
+exceptions sat behind the **Microsoft's** switch. An assembly registered in full trust —
+which happens on-premises — says so in its tooltip instead.
 
 ## What is never listed
 
