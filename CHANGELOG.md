@@ -12,7 +12,8 @@
 
   ![The two groups, side by side](assets/changelog-no-steps.png)
 
-- **The assembly list traded a constant for an answer.** Its **Isolation** column read
+- **The assembly list drops its Isolation column and spends the width on saying what is wrong
+  with each assembly's source.** That column read
   `Sandbox` down every row you were shown — Dataverse online forces it on everything that is
   not Microsoft's, and the **Microsoft's** switch hides the rows where it does not — so a
   quarter of the pane was spent saying the same word. It is gone, an assembly registered in
@@ -26,13 +27,15 @@
   assembly — also answer when hovered, and the last of them reads `—` as soon as the row is
   ticked rather than staying blank until a folder is chosen.
 
-- **Stale files have a group of their own.** They sat inside **Matched**, marked with a word
+- **Stale files have a group of their own, so "what have I got to rewrite" is one look rather
+  than a scan.** They sat inside **Matched**, marked with a word
   on the row, which is no way to answer "what have I got to rewrite" — the one question in
   that pane you can act on with a single press.
 
   ![The Stale group, under Matched](assets/changelog-stale-group.png)
 
-- **The tool behaves itself on a slow link.** XrmToolBox draws a small panel in the middle of
+- **The tool behaves itself on a slow link: eight ways a fetch still in flight could mislead
+  you or lose your work are fixed.** XrmToolBox draws a small panel in the middle of
   a tool while it waits on the environment — not a sheet over the whole tab — so every button
   stayed live for however long the fetch took. On a fast connection that window is
   milliseconds wide. On a slow one it is where most of a session is spent, and eight things
@@ -92,7 +95,8 @@
   **Create Attribute Definitions File** was the last thing still writing on the UI thread —
   both looking for the file and writing it. It runs on a worker like every other write.
 
-- **The source folder is read once, not once per class.** A project of 250 files with 33
+- **The source folder is read once, not once per class, so a 250-file project scans in 17 ms
+  rather than four seconds.** A project of 250 files with 33
   registered classes took four seconds to scan and six to write. Reading all 250 files takes
   twelve milliseconds, so none of that was ever the disk: every registered class was
   re-scanning every file's text with a regex of its own, working out which local classes are
@@ -108,7 +112,8 @@
   A 4000 file repository — larger than most plugin repositories get — now scans in about
   600 ms, of which 430 ms is reading the files.
 
-- **Write no longer freezes the window.** It ran on the UI thread, so a slow write was a
+- **Write no longer freezes the window: it runs under the same progress overlay that loading
+  the assemblies does.** It ran on the UI thread, so a slow write was a
   tool that had stopped repainting. It runs under the same progress overlay as loading the
   assemblies does, and says how many classes it is writing.
 
@@ -121,7 +126,8 @@
   files, against what reading the folder once costs on the same machine. It is what found
   all of the above.
 
-- **The summary comment is grouped by table.** A generic plugin — one class registered
+- **The summary comment is grouped by table, so a plugin registered against a dozen tables
+  reads as a dozen short lists.** A generic plugin — one class registered
   against a dozen tables to stamp the same column on all of them — used to read as one
   interleaved list, every table's steps scattered through it by stage. The comment now
   takes a table at a time, tables alphabetically, keeping the order each table's own steps
@@ -139,9 +145,9 @@
   stage, rank *and* message name are now ordered by table rather than by whatever the query
   returned, so the same registration writes the same file twice running.
 
-- **Credit where it is due.** The docs, the store listing, the generated definitions file
-  and the dialog that writes it now say plainly whose attribute model this is:
-  [Xrm Tools](https://github.com/rezanid/xrmtools), the Visual Studio extension that reads
+- **The docs, the store listing and the generated definitions file now name
+  [Xrm Tools](https://github.com/rezanid/xrmtools) as whose attribute model this is.** It is
+  the Visual Studio extension that reads
   these same attributes back to deploy and register an assembly — and that is worth
   installing whether or not you use this. Compatibility with it is this tool's premise; it
   had earned more than a passing link.
@@ -169,25 +175,24 @@
 
 ## 1.1.0
 
-- **"All columns except" phrasing** (experimental, off by default): an image or filter
-  covering nearly all of an entity's columns reads `(all columns except: creditlimit,
+- **An image or filter covering nearly all of a table's columns can say "all columns except"
+  instead of reciting seventy names** (experimental, off by default). It reads `(all columns except: creditlimit,
   ilac_legacyid)` instead of reciting seventy names. A list that covers every column reads
   `(all 75 columns, written out)`; a stale column name is left verbatim so it stays visible.
-- **Experimental settings** behind a new † button in the write toolbar, remembered across
-  sessions.
+- **Experimental settings live behind a new † button in the write toolbar, and are remembered
+  across sessions.**
 
   ![The dagger button beside the preview toggle](assets/changelog-guru-dagger.png)
 
-- **Source folder status column**: the folder picker moved into a third column that scans
-  in the background and marks every class — current ✓, stale ✎, no file ✗, ambiguous ⚠ —
+- **A third column scans your source folder in the background and marks every class current,
+  stale, missing or ambiguous.** The folder picker moved into it — ✓, ✎, ✗, ⚠ —
   with per-assembly roll-ups and cross-highlighting between the lists.
-- **Write to both files when ambiguous** (optional): every file declaring the class gets
-  the same block, so a partial class is documented on both halves.
-- **Togglable preview**: collapse the code pane to give its width to the source column.
-- **Refresh**: rereads assemblies and steps without losing ticks, filter, or folder.
-- **Namespace-aware file matching**: a short-name tie between files is settled by the
-  registered namespace, so same-named classes in two projects no longer come back
-  ambiguous.
+- **Write to both files when a class is declared twice, so a partial class is documented on
+  both halves** (optional): every file declaring the class gets the same block.
+- **The code preview collapses, giving its width to the source column.**
+- **Refresh rereads the assemblies and steps without losing your ticks, filter or folder.**
+- **A short-name tie between two files is settled by the registered namespace, so same-named
+  classes stop coming back ambiguous.**
 - The hint above the buttons now says what a write would do
   (`Will write 5 classes · 2 skipped (1 no file, 1 ambiguous)`).
 
@@ -195,16 +200,15 @@
 
 First release.
 
-- Reads the plugin steps and images registered in the connected environment and writes
-  them into your C# source, as [Xrm Tools](https://github.com/rezanid/xrmtools)
-  `[Plugin]`, `[Step]` and `[Image]` attributes or as a readable summary comment.
-- Assembly list defaults to the unmanaged assemblies; **Microsoft's** and **Managed** are
-  switches carrying the count of what they hold back.
-- Writes above the class declaration, replacing only its own block; every changed file
-  gets a timestamped `.bak` beside it.
-- **Create Attribute Definitions File** emits a dependency-free
-  `XrmToolsMetaAttributes.cs`, so the attributes compile without the
-  `XrmTools.Meta.Attributes` package.
-- Read-only: nothing is ever written to the environment.
+- **Reads the plugin steps and images registered in the connected environment and writes them
+  into your C# source.** As [Xrm Tools](https://github.com/rezanid/xrmtools) `[Plugin]`,
+  `[Step]` and `[Image]` attributes, or as a readable summary comment.
+- **The assembly list defaults to the unmanaged assemblies; Microsoft's and Managed are
+  switches carrying the count of what they hold back.**
+- **Writes above the class declaration, replacing only its own block; every changed file gets
+  a timestamped `.bak` beside it.**
+- **Create Attribute Definitions File emits a dependency-free `XrmToolsMetaAttributes.cs`, so
+  the attributes compile with no package at all.**
+- **Read-only: nothing is ever written back to the environment.**
 
 Requires XrmToolBox 1.2025.7 or later.

@@ -11,7 +11,23 @@
     <icon>icon.png</icon>
     <readme>docs\README.md</readme>
     <description>Document Dataverse plugin step registrations directly in your C# source. Reads registered steps and images from the connected environment and writes them back into your plugin classes as [Plugin], [Step] and [Image] attributes in Xrm Tools format.</description>
-    <releaseNotes>v1.1.0 - "All columns except" phrasing (experimental), source folder scan with per-class file status, write-to-both-files for ambiguous classes, togglable preview, refresh, namespace-aware file matching. Full changelog: https://github.com/comentality/xrm-plugin-step-codegen/blob/main/CHANGELOG.md</releaseNotes>
+    <releaseNotes>v1.1.0
+- An image or filter covering nearly all of a table's columns can say "all columns except" instead of reciting seventy names.
+- Experimental settings live behind a new † button in the write toolbar, and are remembered across sessions.
+- A third column scans your source folder in the background and marks every class current, stale, missing or ambiguous.
+- Write to both files when a class is declared twice, so a partial class is documented on both halves.
+- The code preview collapses, giving its width to the source column.
+- Refresh rereads the assemblies and steps without losing your ticks, filter or folder.
+- A short-name tie between two files is settled by the registered namespace, so same-named classes stop coming back ambiguous.
+Full changelog, with screenshots: https://github.com/comentality/xrm-plugin-step-codegen/releases/tag/v1.1.0
+
+v1.0.0
+- Reads the plugin steps and images registered in the connected environment and writes them into your C# source.
+- The assembly list defaults to the unmanaged assemblies; Microsoft's and Managed are switches carrying the count of what they hold back.
+- Writes above the class declaration, replacing only its own block; every changed file gets a timestamped .bak beside it.
+- Create Attribute Definitions File emits a dependency-free XrmToolsMetaAttributes.cs, so the attributes compile with no package at all.
+- Read-only: nothing is ever written back to the environment.
+</releaseNotes>
     <tags>XrmToolBox Dynamics365 CRM PowerPlatform Dataverse Plugin Registration Documentation Codegen XrmTools</tags>
     <dependencies>
       <group targetFramework=".NETFramework4.8">
