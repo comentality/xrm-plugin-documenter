@@ -103,7 +103,7 @@ copy of them to be wrong.
 | `compat.ps1`, `compat\` | The emitted attributes against the real `XrmTools.Meta.Attributes` package, pulled from nuget.org. Everything else here judges the tool against this repository's own copy of the shape; this is the only thing that asks whether that copy is still upstream's. Needs the network, not an environment. |
 | `perf.ps1`, `PluginStepCodegen.PerfHarness\` | What the scan and the write *cost*, over generated repositories of 250 to 4000 files. Everything else here asks whether the answer is right; this asks whether waiting for it is reasonable. No environment needed. |
 | `slow.ps1`, `PluginStepCodegen.SlowHarness\` | The window *while* somebody waits: which buttons are live, what the status lines claim, and whether the answer that lands last belongs to the question asked last. Drives the real control against a Dataverse that answers in seconds. No environment needed. |
-| `harness\` | The sample environment and the window capture, shared by the UI and slow harnesses so the two cannot disagree about what "the sample" is. |
+| `harness\` | The sample environment, the window capture and the window itself, shared by the UI and slow harnesses so the two cannot disagree about what "the sample" is. |
 
 `TestPlugins.snk` and `keys/Contoso.snk` are committed on purpose. The public key token is
 part of every `AssemblyQualifiedName` in the fixture, and telling one vendor from another
@@ -333,7 +333,9 @@ Gestures are performed on the controls (`PerformClick`, a box ticked, a path typ
 timer on the UI thread, because that is where the tool lives: `WorkAsync` marshals its
 callback back there and the debounce timers tick there. Each scenario gets a window, a
 source folder and a **screenshot per gesture** of its own under `tests\.slow`, so a failure
-is something to look at rather than only a line to read. A sweeper closes whatever modal the
+is something to look at rather than only a line to read. The windows themselves open past the
+right edge of every monitor and are never activated, so neither harness interrupts whoever is at
+the machine — see [Windows nobody has to look at](#windows-nobody-has-to-look-at). A sweeper closes whatever modal the
 tool puts up and writes down that it did, which is also how "one write, one report" is
 checked.
 
@@ -358,6 +360,27 @@ scenario written against code that already passes, because one that cannot fail 
 one that is not there. The exit code
 is the number of scenarios with findings, and `report.txt` beside the shots holds the same
 lines the console printed.
+
+## Windows nobody has to look at
+
+Both UI harnesses open real windows on a real desktop, and neither of them needs to be seen.
+`Capture` asks a window for its own pixels through `PrintWindow`, rather than reading the
+screen, and the gestures are performed on the controls rather than typed at them. Nothing about
+a run depends on where the window is or on who has the keyboard.
+
+So `QuietForm` puts them past the right edge of every monitor and shows them without
+activating: a suite can run while somebody is working, and switching windows, typing elsewhere
+or locking the workstation does not disturb it. The only way to spoil a run is to close one of
+the windows, which is why they stay out of the taskbar.
+
+Off screen rather than hidden - a window that was never shown has no layout and no painted
+pixels to photograph. Set `PSCG_HARNESS_ONSCREEN=1` to bring them back to (0,0) and on top,
+which is worth doing to watch a scenario play out, and is the only arrangement in which
+`Capture`'s screen grab fallback can mean anything.
+
+The two are otherwise the same picture: regenerating `assets\ui-attributes.png` off screen
+differs from the on screen shot by at most 1/255 in one channel, in the antialiasing of the
+coloured preview text, and off screen the shots are identical run to run.
 
 # Expected output
 

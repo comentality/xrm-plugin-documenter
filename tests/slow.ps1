@@ -15,8 +15,10 @@
 # folder and a screenshot per beat of its own under tests\.slow, and the exit code is the number
 # of scenarios with findings.
 #
-# The windows are real windows and they will appear on screen. Nothing is typed into them; the
-# gestures are performed on the controls, and a machine can be left alone while it runs.
+# The windows are real windows, but they open past the edge of the desktop and never take the
+# keyboard: the shots are the window's own pixels and the gestures are performed on the controls
+# rather than typed at them, so the machine stays usable while a suite runs. Set
+# PSCG_HARNESS_ONSCREEN=1 to watch a scenario play out instead.
 
 param(
     [string[]]$Scenario,

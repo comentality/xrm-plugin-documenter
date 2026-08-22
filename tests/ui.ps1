@@ -13,6 +13,9 @@
 # It drives the real control, so it screenshots real bugs: a splitter that throws while being set
 # up shows here as a failed run rather than as a broken tab in XrmToolBox.
 #
+# The windows open off screen and never take the keyboard, so a run does not interrupt whoever is
+# at the machine. Set PSCG_HARNESS_ONSCREEN=1 to watch one being taken.
+#
 # -Docs writes assets\ui-attributes.png and assets\ui-comment.png, which README.md and docs\ point
 # at. They are the same control and the same sample data as every other shot; only the window
 # title, the source folder shown in the box and the output mode differ, so a change to the layout
