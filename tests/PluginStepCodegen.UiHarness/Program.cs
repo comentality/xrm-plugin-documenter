@@ -64,13 +64,10 @@ namespace PluginStepCodegen.UiHarness
             Application.SetCompatibleTextRenderingDefault(false);
 
             var control = new PluginStepCodegenControl { Dock = DockStyle.Fill };
-            var form = new Form
+            var form = new QuietForm
             {
                 Text = title,
-                ClientSize = new Size(width, height),
-                StartPosition = FormStartPosition.Manual,
-                Location = new Point(0, 0),
-                TopMost = true      // the screen capture fallback grabs whatever is on top
+                ClientSize = new Size(width, height)
             };
             form.Controls.Add(control);
 

@@ -96,13 +96,10 @@ namespace PluginStepCodegen.SlowHarness
             Connect(run.Control, run.Service);
             run.Probe = new Probe(run.Control);
 
-            run.Form = new Form
+            run.Form = new QuietForm
             {
                 Text = "Plugin Step Codegen — " + Name,
-                ClientSize = new Size(1280, 900),
-                StartPosition = FormStartPosition.Manual,
-                Location = new Point(0, 0),
-                TopMost = true
+                ClientSize = new Size(1280, 900)
             };
             run.Form.Controls.Add(run.Control);
 
