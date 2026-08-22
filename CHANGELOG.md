@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## Unreleased
+## 1.2.0
 
 - **A registered class with no steps is no longer filed as unregistered.** A plugin type
   somebody registered and has not written a step for yet is not listed — there is nothing

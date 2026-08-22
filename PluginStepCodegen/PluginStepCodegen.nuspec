@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
   <metadata>
     <id>Comentality.PluginStepCodegen</id>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <title>Plugin Step Codegen</title>
     <authors>Comentality</authors>
     <license type="expression">MIT</license>
@@ -11,7 +11,21 @@
     <icon>icon.png</icon>
     <readme>docs\README.md</readme>
     <description>Document Dataverse plugin step registrations directly in your C# source. Reads registered steps and images from the connected environment and writes them back into your plugin classes as [Plugin], [Step] and [Image] attributes in Xrm Tools format.</description>
-    <releaseNotes>v1.1.0
+    <releaseNotes>v1.2.0
+- A registered class with no steps is no longer filed as unregistered.
+- The assembly list drops its Isolation column and spends the width on saying what is wrong with each assembly's source.
+- Stale files have a group of their own, so "what have I got to rewrite" is one look rather than a scan.
+- The tool behaves itself on a slow link: eight ways a fetch still in flight could mislead you or lose your work are fixed.
+- The source folder can be slow too, and no longer freezes the window when it is.
+- The source folder is read once, not once per class, so a 250-file project scans in 17 ms rather than four seconds.
+- Write no longer freezes the window: it runs under the same progress overlay that loading the assemblies does.
+- Marks from another folder are cleared when you change folders.
+- The summary comment is grouped by table, so a plugin registered against a dozen tables reads as a dozen short lists.
+- The docs, the store listing and the generated definitions file now name Xrm Tools as whose attribute model this is.
+- Nothing that goes wrong should reach XrmToolBox's crash dialog.
+Full changelog, with screenshots: https://github.com/comentality/xrm-plugin-step-codegen/releases/tag/v1.2.0
+
+v1.1.0
 - An image or filter covering nearly all of a table's columns can say "all columns except" instead of reciting seventy names.
 - Experimental settings live behind a new † button in the write toolbar, and are remembered across sessions.
 - A third column scans your source folder in the background and marks every class current, stale, missing or ambiguous.
@@ -19,7 +33,6 @@
 - The code preview collapses, giving its width to the source column.
 - Refresh rereads the assemblies and steps without losing your ticks, filter or folder.
 - A short-name tie between two files is settled by the registered namespace, so same-named classes stop coming back ambiguous.
-Full changelog, with screenshots: https://github.com/comentality/xrm-plugin-step-codegen/releases/tag/v1.1.0
 
 v1.0.0
 - Reads the plugin steps and images registered in the connected environment and writes them into your C# source.
