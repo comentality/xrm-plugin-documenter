@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Windows.Forms;
 using PluginStepCodegen.Harness;
@@ -130,10 +131,20 @@ namespace PluginStepCodegen.UiHarness
             // The three that are ticked: one that carries most of the registrations, one small one,
             // and one that turned out to have nothing registered at all - which the list cannot show
             // and the status line has to.
+            // Split the way RegistrationQuery splits it. A type with no steps is never listed -
+            // there is nothing to write for it - and its name is kept only so the folder's copy of
+            // it is not reported as unregistered. Handing the control the unsplit sample would
+            // photograph a row the real tool cannot produce.
+            var steplessNames = Field<HashSet<string>>(control, "_steplessClassNames");
             foreach (var assembly in assemblies.GetRange(0, 3))
             {
                 checkedAssemblies.Add(assembly.Id);
-                typesByAssembly[assembly.Id] = Sample.Types(assembly);
+                var types = Sample.Types(assembly);
+                typesByAssembly[assembly.Id] = types.Where(t => t.Steps.Count > 0).ToList();
+                foreach (var stepless in types.Where(t => t.Steps.Count == 0))
+                {
+                    steplessNames.Add(stepless.ClassName);
+                }
             }
 
             // A folder that exists and holds one of everything the scan can find - a current file,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xrm.Sdk;
@@ -65,16 +65,16 @@ namespace PluginStepCodegen.Logic
         /// rather than a half list, because the caller that cancelled is not going to read it and
         /// the one that did not must never be handed a partial answer as a whole one.
         /// </summary>
-        public static List<PluginTypeInfo> GetPluginTypes(IOrganizationService service, IList<Guid> assemblyIds,
+        public static TypeFetch GetPluginTypes(IOrganizationService service, IList<Guid> assemblyIds,
             Func<bool> cancelled = null)
         {
             var stop = cancelled ?? (() => false);
-            var nothing = new List<PluginTypeInfo>();
+            var nothing = new TypeFetch();
 
             var types = GetTypes(service, assemblyIds, stop);
             if (types.Count == 0)
             {
-                return stop() ? nothing : types;
+                return nothing;
             }
 
             var byId = types.ToDictionary(t => t.Id);
@@ -130,7 +130,13 @@ namespace PluginStepCodegen.Logic
                     .ToList();
             }
 
-            return types.Where(t => t.Steps.Count > 0).OrderBy(t => t.TypeName).ToList();
+            // A type with no steps is registered all the same, and the caller is told which
+            // ones they were: without that, its source file reads as a class nobody registered.
+            return new TypeFetch
+            {
+                Types = types.Where(t => t.Steps.Count > 0).OrderBy(t => t.TypeName).ToList(),
+                Stepless = types.Where(t => t.Steps.Count == 0).Select(t => t.ClassName).ToList()
+            };
         }
 
         private static List<PluginTypeInfo> GetTypes(IOrganizationService service, IList<Guid> assemblyIds, Func<bool> stop)

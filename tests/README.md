@@ -1,4 +1,4 @@
-# End to end tests
+﻿# End to end tests
 
 Six plugin assemblies, two publishers, three solutions of empty plugins and two assemblies
 registered by hand into none of them, so a run can be judged against something other than
@@ -776,6 +776,12 @@ must come back byte for byte identical.
 
 Plugin types with no steps. They must not appear in the list at all, and their files must
 come back from a run byte for byte identical.
+
+`NeverRegistered.cs` belongs in the middle column under **Registered, no steps**, not under
+**In folder, not registered**: the class is registered, and telling somebody to register
+what they already registered is the one thing that group must never say.
+`BetaDuplicate.cs` is in neither, because it declares `Duplicate` and the registered
+`TestPlugins.Alpha.Duplicate` already accounts for that name.
 
 ## Contoso.Crm.Plugins
 

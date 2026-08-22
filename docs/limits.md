@@ -1,4 +1,4 @@
-# Limits and troubleshooting
+﻿# Limits and troubleshooting
 
 ## What the attribute model cannot say
 
@@ -44,7 +44,10 @@ is nothing to write.
 
 **A class I expected is missing from the list.**
 Only classes with at least one registered step are listed. A base class, or a type
-registered but never given a step, has nothing to document.
+registered but never given a step, has nothing to document. If its `.cs` file is under the
+source folder it appears in the middle column under **Registered, no steps** — which is a
+different finding from **In folder, not registered**, and asks for a different thing:
+register a step, rather than register the class.
 
 **Everything is reported as *No matching .cs file*.**
 The source folder is pointing somewhere else, or at a folder that only holds compiled

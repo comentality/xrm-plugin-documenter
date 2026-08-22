@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -25,11 +25,18 @@ namespace PluginStepCodegen.Logic
         public List<string> Candidates;
     }
 
-    /// <summary>A plugin class sitting in the folder with no registration behind it.</summary>
+    /// <summary>A plugin class sitting in the folder with no step behind it.</summary>
     public class LocalClass
     {
         public string ClassName;
         public string File;
+
+        /// <summary>
+        /// Whether a registered plugin type of this name exists and simply has no steps. Two
+        /// findings a reader must not be given as one: a class nobody registered is work not
+        /// started, and a class registered with no steps is work stopped one move from the end.
+        /// </summary>
+        public bool Stepless;
     }
 
     /// <summary>Everything one look at the folder produced.</summary>
@@ -48,9 +55,10 @@ namespace PluginStepCodegen.Logic
     /// </summary>
     public static class SourceScanner
     {
-        public static FolderScan Scan(string folder, IList<PluginTypeInfo> registered, ICollection<string> allRegisteredClassNames)
+        public static FolderScan Scan(string folder, IList<PluginTypeInfo> registered,
+            ICollection<string> allRegisteredClassNames, ICollection<string> steplessClassNames = null)
         {
-            return Scan(SourceIndex.Build(folder), registered, allRegisteredClassNames);
+            return Scan(SourceIndex.Build(folder), registered, allRegisteredClassNames, steplessClassNames);
         }
 
         /// <summary>
@@ -58,7 +66,8 @@ namespace PluginStepCodegen.Logic
         /// what keeps the reading and the deciding separable, and it is what the perf
         /// harness times the two halves of.
         /// </summary>
-        public static FolderScan Scan(SourceIndex index, IList<PluginTypeInfo> registered, ICollection<string> allRegisteredClassNames)
+        public static FolderScan Scan(SourceIndex index, IList<PluginTypeInfo> registered,
+            ICollection<string> allRegisteredClassNames, ICollection<string> steplessClassNames = null)
         {
             var scan = new FolderScan { Folder = index.Folder };
 
@@ -87,7 +96,7 @@ namespace PluginStepCodegen.Logic
                 scan.Matches[type.Id] = match;
             }
 
-            scan.Unregistered.AddRange(FindUnregistered(index, allRegisteredClassNames));
+            scan.Unregistered.AddRange(FindUnregistered(index, allRegisteredClassNames, steplessClassNames));
             return scan;
         }
 
@@ -101,7 +110,8 @@ namespace PluginStepCodegen.Logic
         /// each name admits the classes naming it, and those names go on the queue. A pass per
         /// name over a repository's worth of classes is what this used to cost.
         /// </summary>
-        private static IEnumerable<LocalClass> FindUnregistered(SourceIndex index, ICollection<string> registeredClassNames)
+        private static IEnumerable<LocalClass> FindUnregistered(SourceIndex index,
+            ICollection<string> registeredClassNames, ICollection<string> steplessClassNames)
         {
             // Which classes name a given identifier in their base list.
             var derived = new Dictionary<string, List<DeclaredClass>>(StringComparer.Ordinal);
@@ -148,7 +158,12 @@ namespace PluginStepCodegen.Logic
                             && !d.IsAbstract
                             && !registeredClassNames.Contains(d.Name))
                 .GroupBy(d => d.Name, StringComparer.Ordinal)
-                .Select(g => new LocalClass { ClassName = g.Key, File = g.First().File.Path })
+                .Select(g => new LocalClass
+                {
+                    ClassName = g.Key,
+                    File = g.First().File.Path,
+                    Stepless = steplessClassNames != null && steplessClassNames.Contains(g.Key)
+                })
                 .OrderBy(c => c.ClassName, StringComparer.OrdinalIgnoreCase);
         }
     }

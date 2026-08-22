@@ -1,6 +1,23 @@
-# Changelog
+﻿# Changelog
 
 ## Unreleased
+
+- **A registered class with no steps is no longer filed as unregistered.** A plugin type
+  somebody registered and has not written a step for yet is not listed — there is nothing
+  to document — so its `.cs` file fell through to **In folder, not registered**, whose
+  tooltip said in as many words that nothing registers it. That is the opposite of what
+  happened to that class, and it sent you off to register something that was already
+  registered. Those files now have a group of their own, and the middle column's status
+  line counts them apart from the classes nothing registers at all.
+
+  ![The two groups, side by side](assets/changelog-no-steps.png)
+
+- **The assembly rows say what their Source cell means.** Three of its states are blanks
+  that look alike — not ticked yet, no source folder chosen, nothing registered in the
+  assembly — and the roll-up's glyph says how bad the news is without saying which news it
+  is. Every state now answers when the row is hovered, and an assembly with no step
+  registered against anything in it reads `—` as soon as it is ticked, rather than staying
+  blank until a folder is chosen.
 
 - **The tool behaves itself on a slow link.** XrmToolBox draws a small panel in the middle of
   a tool while it waits on the environment — not a sheet over the whole tab — so every button

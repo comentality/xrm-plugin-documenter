@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -164,5 +164,23 @@ namespace PluginStepCodegen.Logic
 
         /// <summary>The updatable subset, sorted. What a filtering list is measured against.</summary>
         public List<string> FilterColumns = new List<string>();
+    }
+
+    /// <summary>
+    /// What one fetch of the registrations came back with. The two are separated at the query
+    /// rather than by the caller because a type with no steps is not a smaller version of a type
+    /// with steps: there is nothing to write for it, so it is not listed and not counted among
+    /// the classes - but it is registered, and something has to be able to say so.
+    /// </summary>
+    public class TypeFetch
+    {
+        /// <summary>The types worth listing: everything with at least one step against it.</summary>
+        public List<PluginTypeInfo> Types = new List<PluginTypeInfo>();
+
+        /// <summary>
+        /// Class names of registered plugin types with no steps. Held only so a file declaring
+        /// one is not reported as an unregistered class, which is the opposite of true.
+        /// </summary>
+        public List<string> Stepless = new List<string>();
     }
 }

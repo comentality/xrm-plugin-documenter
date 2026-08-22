@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -20,6 +20,13 @@ namespace PluginStepCodegen
 
         /// <summary>Types already fetched, keyed by assembly, so re-checking one costs nothing.</summary>
         private readonly Dictionary<Guid, List<PluginTypeInfo>> _typesByAssembly = new Dictionary<Guid, List<PluginTypeInfo>>();
+
+        /// <summary>
+        /// Registered classes with no steps, from every assembly fetched so far. They are in no
+        /// list and nothing is written for them; this exists so the folder's copy of one is
+        /// reported as what it is rather than as a class nobody registered.
+        /// </summary>
+        private readonly HashSet<string> _steplessClassNames = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
         /// Each stepped entity's current columns, fetched alongside its steps and kept for the
@@ -325,6 +332,9 @@ namespace PluginStepCodegen
                 MultiSelect = true,
                 CheckBoxes = true,
                 HideSelection = false,
+                // The Source cell is a roll-up, and three of its states are silences that look
+                // alike. The row says which one it is when asked.
+                ShowItemToolTips = true,
                 Font = _listFont
             };
             _lvAssemblies.Columns.Add("Assembly");
@@ -834,6 +844,7 @@ namespace PluginStepCodegen
 
                     _assemblies = (List<AssemblyInfo>)result.Result;
                     _typesByAssembly.Clear();
+                    _steplessClassNames.Clear();
                     _columnsByEntity.Clear();
                     _checkedAssemblies.Clear();
                     _excludedTypes.Clear();
@@ -889,6 +900,7 @@ namespace PluginStepCodegen
                     var alive = new HashSet<Guid>(_assemblies.Select(a => a.Id));
                     _checkedAssemblies.RemoveWhere(id => !alive.Contains(id));
                     _typesByAssembly.Clear();
+                    _steplessClassNames.Clear();
                     // Columns move with the registrations - refresh is pressed after changing
                     // things in the IDE, and a new column is exactly such a change.
                     _columnsByEntity.Clear();
@@ -1061,7 +1073,8 @@ namespace PluginStepCodegen
                 IsCancelable = true,
                 Work = (worker, args) =>
                 {
-                    var types = RegistrationQuery.GetPluginTypes(Service, missing, () => worker.CancellationPending);
+                    var fetch = RegistrationQuery.GetPluginTypes(Service, missing, () => worker.CancellationPending);
+                    var types = fetch.Types;
                     if (worker.CancellationPending)
                     {
                         args.Cancel = true;
@@ -1102,7 +1115,7 @@ namespace PluginStepCodegen
                         return;
                     }
 
-                    args.Result = new KeyValuePair<List<PluginTypeInfo>, Dictionary<string, EntityColumnsInfo>>(types, columns);
+                    args.Result = new KeyValuePair<TypeFetch, Dictionary<string, EntityColumnsInfo>>(fetch, columns);
                 },
                 PostWorkCallBack = result =>
                 {
@@ -1134,13 +1147,20 @@ namespace PluginStepCodegen
                         return;
                     }
 
-                    var fetched = (KeyValuePair<List<PluginTypeInfo>, Dictionary<string, EntityColumnsInfo>>)result.Result;
+                    var fetched = (KeyValuePair<TypeFetch, Dictionary<string, EntityColumnsInfo>>)result.Result;
                     foreach (var entry in fetched.Value)
                     {
                         _columnsByEntity[entry.Key] = entry.Value;
                     }
 
-                    var loaded = fetched.Key.ToLookup(t => t.AssemblyId);
+                    // Kept by name rather than by assembly: the folder is searched by class name
+                    // too, and which assembly a .cs file was compiled into is not knowable here.
+                    foreach (var name in fetched.Key.Stepless)
+                    {
+                        _steplessClassNames.Add(name);
+                    }
+
+                    var loaded = fetched.Key.Types.ToLookup(t => t.AssemblyId);
 
                     // Every assembly asked for is recorded, including the ones that turned out to
                     // have nothing registered, so unticking and reticking one does not ask again.
@@ -1509,6 +1529,9 @@ namespace PluginStepCodegen
             var registeredNames = new HashSet<string>(
                 _typesByAssembly.Values.SelectMany(t => t).Select(t => t.ClassName));
 
+            // Snapshotted for the same reason: the worker must not read a set the UI thread owns.
+            var stepless = new HashSet<string>(_steplessClassNames, StringComparer.Ordinal);
+
             // Marks left over from another folder are not stale, they are about somewhere
             // else, so they go before the new answer arrives rather than after. A rescan of
             // the same folder keeps its marks up, because they are still very nearly true
@@ -1532,7 +1555,7 @@ namespace PluginStepCodegen
                 var look = new FolderLook { Folder = folder, There = Directory.Exists(folder) };
                 if (look.There && match)
                 {
-                    look.Scan = SourceScanner.Scan(folder, listed, registeredNames);
+                    look.Scan = SourceScanner.Scan(folder, listed, registeredNames, stepless);
                 }
 
                 return look;
@@ -1678,20 +1701,34 @@ namespace PluginStepCodegen
                 {
                     cell.Text = "…";
                     cell.ForeColor = SystemColors.GrayText;
+                    item.ToolTipText = "Reading its registered classes.";
                     continue;
                 }
 
                 List<PluginTypeInfo> types;
-                if (scan == null || !_typesByAssembly.TryGetValue(assembly.Id, out types))
+                if (!_typesByAssembly.TryGetValue(assembly.Id, out types))
                 {
                     cell.Text = string.Empty;
+                    item.ToolTipText = "Tick it to read what is registered in it.";
                     continue;
                 }
 
+                // Asked before the folder is. Having no step to document is a fact about the
+                // registration rather than about the folder, and holding it back until a folder is
+                // chosen leaves the row blank beside a class list the assembly is missing from,
+                // with nothing anywhere saying why.
                 if (types.Count == 0)
                 {
                     cell.Text = "—";
                     cell.ForeColor = SystemColors.GrayText;
+                    item.ToolTipText = "Registered, but no step is registered against any class in it.";
+                    continue;
+                }
+
+                if (scan == null)
+                {
+                    cell.Text = string.Empty;
+                    item.ToolTipText = types.Count + " classes. Choose the source folder to match them against.";
                     continue;
                 }
 
@@ -1712,6 +1749,14 @@ namespace PluginStepCodegen
                 var glyph = missing > 0 ? GlyphMissing : ambiguous > 0 ? GlyphAmbiguous : GlyphFound;
                 cell.Text = found + "/" + types.Count + " " + glyph;
                 cell.ForeColor = missing > 0 ? GlyphRed : ambiguous > 0 ? GlyphAmber : GlyphGreen;
+
+                // The glyph says how bad it is and never which it is: two classes with no file and
+                // two declared twice wear the same mark. Asked here rather than opened to find out.
+                var trouble = new List<string>();
+                if (missing > 0) trouble.Add(missing + " with no file");
+                if (ambiguous > 0) trouble.Add(ambiguous + " declared in more than one file");
+                item.ToolTipText = found + " of " + types.Count + " classes matched to a file"
+                    + (trouble.Count == 0 ? "." : " · " + string.Join(" · ", trouble));
             }
         }
 
@@ -1752,10 +1797,22 @@ namespace PluginStepCodegen
                 var groupMatched = new ListViewGroup("Matched (" + matched.Count + ")");
                 var groupMissing = new ListViewGroup("Not found (" + missing.Count + ")");
                 var groupAmbiguous = new ListViewGroup("Ambiguous (" + ambiguous.Count + ")");
+                // Split rather than counted together: one is a class nobody registered, the other
+                // is registered and one step short of anything to document. Reading the second as
+                // the first sends somebody off to register what is already registered.
+                var unregistered = scan.Unregistered.Where(u => !u.Stepless).ToList();
+                var stepless = scan.Unregistered.Where(u => u.Stepless).ToList();
+
+                var groupStepless = new ListViewGroup(waiting
+                    ? "Registered, no steps (still loading)"
+                    : "Registered, no steps (" + stepless.Count + ")");
                 var groupUnregistered = new ListViewGroup(waiting
                     ? "In folder, not registered (still loading)"
-                    : "In folder, not registered (" + scan.Unregistered.Count + ")");
-                _lvSource.Groups.AddRange(new[] { groupMatched, groupMissing, groupAmbiguous, groupUnregistered });
+                    : "In folder, not registered (" + unregistered.Count + ")");
+                _lvSource.Groups.AddRange(new[]
+                {
+                    groupMatched, groupMissing, groupAmbiguous, groupStepless, groupUnregistered
+                });
 
                 foreach (var v in matched)
                 {
@@ -1814,11 +1871,15 @@ namespace PluginStepCodegen
 
                 foreach (var local in waiting ? Enumerable.Empty<LocalClass>() : scan.Unregistered)
                 {
-                    var item = new ListViewItem(Relative(scan.Folder, local.File), groupUnregistered)
+                    var item = new ListViewItem(Relative(scan.Folder, local.File),
+                        local.Stepless ? groupStepless : groupUnregistered)
                     {
                         ForeColor = SystemColors.GrayText,
-                        ToolTipText = local.ClassName + "\r\nImplements IPlugin, directly or through a base, "
-                                      + "but nothing among the fetched assemblies registers it.",
+                        ToolTipText = local.ClassName + "\r\n" + (local.Stepless
+                            ? "Registered as a plugin type, with no step registered against it. "
+                              + "There is nothing to document until there is a step."
+                            : "Implements IPlugin, directly or through a base, "
+                              + "but nothing among the fetched assemblies registers it."),
                         UseItemStyleForSubItems = false
                     };
                     item.SubItems.Add(local.ClassName).ForeColor = SystemColors.GrayText;
@@ -1877,8 +1938,19 @@ namespace PluginStepCodegen
             if (missing > 0) parts.Add(missing + " not found");
             if (ambiguous > 0) parts.Add(ambiguous + " ambiguous");
             // Counted against every registration there is, so not counted at all until there is.
-            if (Outstanding) parts.Add("still loading");
-            else if (scan.Unregistered.Count > 0) parts.Add(scan.Unregistered.Count + " unregistered");
+            if (Outstanding)
+            {
+                parts.Add("still loading");
+            }
+            else
+            {
+                // Counted apart for the reason they are listed apart: a registered class is not an
+                // unregistered one, whatever else it is missing.
+                var stepless = scan.Unregistered.Count(u => u.Stepless);
+                var unregistered = scan.Unregistered.Count - stepless;
+                if (unregistered > 0) parts.Add(unregistered + " unregistered");
+                if (stepless > 0) parts.Add(stepless + " with no steps");
+            }
             return string.Join(" · ", parts);
         }
 

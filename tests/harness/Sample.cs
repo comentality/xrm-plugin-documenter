@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -81,6 +81,11 @@ namespace PluginStepCodegen.Harness
                             NewStep("Update", "contact", 40, 1, "emailaddress1")),
                         // Registered as a type but with no step against it: nothing to document.
                         NewType(assembly, "Contoso.Plugins.Shared.PluginBase"),
+                        // The same, but its file is an ordinary class rather than a base: somebody
+                        // registered it and has not written a step for it yet. The scan must not
+                        // report that file as a class nobody registered, which is the opposite of
+                        // what happened to it.
+                        NewType(assembly, "Contoso.Plugins.Leads.LeadRouting"),
                         NewType(assembly, "Contoso.Plugins.Opportunities.OpportunityCloseAudit",
                             NewStep("Win", "opportunity", 40, 1)),
                     };
@@ -141,7 +146,8 @@ namespace PluginStepCodegen.Harness
         /// <summary>
         /// One source file per state the scan can report. WebhookRetryHandler deliberately gets
         /// no file (not found), OpportunityCloseAudit gets two in the same namespace (ambiguous),
-        /// and two classes exist that nothing registers.
+        /// two classes exist that nothing registers, and LeadRouting is registered with no step
+        /// against it - a file in none of the three states, which is the point of it.
         /// </summary>
         public static void SeedSourceFolder(string folder, Dictionary<Guid, List<PluginTypeInfo>> typesByAssembly)
         {
@@ -171,6 +177,8 @@ namespace PluginStepCodegen.Harness
                 PluginFile("Contoso.Plugins.Contacts", "ContactMerger", "IPlugin"));
             Seed(folder, @"Leads\LeadScoring.cs",
                 PluginFile("Contoso.Plugins.Leads", "LeadScoring", "PluginBase"));
+            Seed(folder, @"Leads\LeadRouting.cs",
+                PluginFile("Contoso.Plugins.Leads", "LeadRouting", "PluginBase"));
         }
 
         private static void Seed(string folder, string relative, string content)
