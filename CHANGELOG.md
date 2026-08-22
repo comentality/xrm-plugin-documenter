@@ -46,8 +46,21 @@
     then there is only the list, and an environment that could not be reached looked exactly
     like an environment with nothing in it. The status line keeps the reason.
 
-  `tests\slow.ps1` is what found all of it: eight scenarios driving the real control against
+  `tests\slow.ps1` is what found all of it: ten scenarios driving the real control against
   a Dataverse that takes seconds to answer, with a screenshot per gesture.
+
+- **The source folder can be slow too, and no longer freezes the window when it is.** A plugin
+  repository is as likely to be on a UNC share, a mapped drive or a sync client that has
+  stopped syncing as it is to be on a disk, and against one of those simply asking whether a
+  folder exists blocks until the network gives up. That question was being asked from the
+  button-state pass, which runs **on every keystroke in the folder box** — so typing the path
+  to a share that was down froze the tool once per character. It is now asked once, on a
+  worker, after the same half-second pause the scan already waits out, and everything else
+  reads the answer it left. The box says `Looking for that folder...` while the question is
+  out, rather than calling the path wrong before anybody has looked.
+
+  **Create Attribute Definitions File** was the last thing still writing on the UI thread —
+  both looking for the file and writing it. It runs on a worker like every other write.
 
 - **The source folder is read once, not once per class.** A project of 250 files with 33
   registered classes took four seconds to scan and six to write. Reading all 250 files takes

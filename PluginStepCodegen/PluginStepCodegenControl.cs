@@ -70,8 +70,20 @@ namespace PluginStepCodegen
         /// <summary>Set once the assembly list has been fetched at all, which is what Refresh needs.</summary>
         private bool _loaded;
 
-        /// <summary>Set while a write is running on a worker.</summary>
-        private bool _writing;
+        /// <summary>
+        /// What is being done to the source folder right now, in the hint's own words, or null
+        /// when nothing is. A write and the definitions file are both work on the same folder
+        /// and both may be talking to a share, so they take turns and say which is which.
+        /// </summary>
+        private string _folderBusy;
+
+        /// <summary>
+        /// The last path the filesystem was asked about, and what it said. Answered on a worker
+        /// by <see cref="StartScan"/> and only read from here, because the folder may be a share
+        /// that takes seconds to say "no" and this is read on every keystroke.
+        /// </summary>
+        private string _folderProbed;
+        private bool _folderThere;
 
         /// <summary>
         /// Why the last fetch did not answer, in the status line's own words. A dialog is read
@@ -1224,7 +1236,13 @@ namespace PluginStepCodegen
         {
             var hasChecked = _lvTypes.CheckedItems.Count > 0;
             var folder = _txtFolder.Text.Trim();
-            var hasFolder = folder.Length > 0 && Directory.Exists(folder);
+
+            // Read off the last answer rather than asking again. This runs on every keystroke in
+            // the folder box, and against a share that is down each ask costs the window however
+            // long the network takes to give up.
+            var probed = folder.Length == 0
+                         || string.Equals(_folderProbed, folder, StringComparison.OrdinalIgnoreCase);
+            var hasFolder = probed && folder.Length > 0 && _folderThere;
 
             // Nothing is disabled while a WorkAsync runs: the panel XrmToolBox draws over the tool
             // is a small one in the middle, not a sheet over the whole tab, so every button below
@@ -1236,23 +1254,27 @@ namespace PluginStepCodegen
             // original is the copy that is lost.
             _btnLoadAssemblies.Enabled = !_loadingAssemblies;
             _btnRefresh.Enabled = _loaded && !_loadingAssemblies;
-            _btnWrite.Enabled = hasChecked && hasFolder && !_writing && !Outstanding;
+            _btnWrite.Enabled = hasChecked && hasFolder && _folderBusy == null && !Outstanding;
             // A comment needs no attribute definitions to compile against.
-            _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked && !_writing;
+            _btnCreateDefinitions.Enabled = hasFolder && _rbAttributes.Checked && _folderBusy == null;
 
             // A path is typed or pasted a character at a time and one wrong letter reads the same
             // as a right one, so the field says whether it landed rather than leaving the buttons
-            // to go quiet for a reason nothing gives.
-            _txtFolder.ForeColor = folder.Length > 0 && !hasFolder ? Color.Firebrick : SystemColors.WindowText;
+            // to go quiet for a reason nothing gives. Only once the folder has answered, though -
+            // red while the question is still out would call every half-typed path wrong.
+            _txtFolder.ForeColor = probed && folder.Length > 0 && !_folderThere
+                ? Color.Firebrick
+                : SystemColors.WindowText;
             _lblWriteHint.Text =
-                _writing ? "Writing..." :
-                _loadingAssemblies ? "Waiting on the assembly list." :
+                _folderBusy ??
+                (_loadingAssemblies ? "Waiting on the assembly list." :
                 _typesInFlight.Count > 0 ? "Waiting on " + _typesInFlight.Count
                                            + (_typesInFlight.Count == 1 ? " assembly" : " assemblies") + " still loading." :
                 folder.Length == 0 ? "Pick a source folder first." :
-                !hasFolder ? "No folder at that path." :
+                !probed ? "Looking for that folder..." :
+                !_folderThere ? "No folder at that path." :
                 !hasChecked ? "Tick the classes to document." :
-                WritePlan();
+                WritePlan());
 
             UpdateStatus();
 
@@ -1442,18 +1464,37 @@ namespace PluginStepCodegen
         private const string GlyphMissing = "✗";    // ✗
         private const string GlyphAmbiguous = "⚠";  // ⚠
 
+        /// <summary>What one look at the source folder found: whether it is there, and what is in it.</summary>
+        private class FolderLook
+        {
+            public string Folder;
+            public bool There;
+
+            /// <summary>Null when the folder is not there, or when there is nothing yet to match against.</summary>
+            public FolderScan Scan;
+        }
+
         /// <summary>
         /// Holds the folder against the loaded registrations, off the UI thread: the read is
         /// however big somebody's src tree is. Anything that changes either side calls this;
         /// a result that arrives after the next scan started is dropped.
+        ///
+        /// Whether the folder is even there is asked here too, and for the same reason. A source
+        /// folder is as likely as not to be somewhere else - a UNC share, a mapped drive, a sync
+        /// client that has stopped syncing - and against one of those <c>Directory.Exists</c>
+        /// blocks until the network gives up, which is seconds. It used to be asked straight from
+        /// <see cref="UpdateButtonState"/>, which runs on every keystroke in the folder box, so
+        /// typing the path to a share that was down froze the window once per character.
         /// </summary>
         private void StartScan()
         {
             var generation = ++_scanGeneration;
             var folder = _txtFolder.Text.Trim();
 
-            if (folder.Length == 0 || !Directory.Exists(folder) || _typesByAssembly.Count == 0)
+            if (folder.Length == 0)
             {
+                _folderProbed = null;
+                _folderThere = false;
                 _scan = null;
                 RenderScan();
                 return;
@@ -1478,8 +1519,24 @@ namespace PluginStepCodegen
                 RenderScan();
             }
 
-            _lblScanStatus.Text = "Scanning...";
-            Task.Run(() => SourceScanner.Scan(folder, listed, registeredNames)).ContinueWith(t =>
+            var match = _typesByAssembly.Count > 0;
+            _lblScanStatus.Text = string.Equals(_folderProbed, folder, StringComparison.OrdinalIgnoreCase)
+                ? "Scanning..."
+                : "Looking for that folder...";
+
+            Task.Run(() =>
+            {
+                // Directory.Exists answers false rather than throwing, whatever went wrong, which
+                // is the answer to give here: to somebody choosing a folder, one that cannot be
+                // reached and one that is not there are the same folder.
+                var look = new FolderLook { Folder = folder, There = Directory.Exists(folder) };
+                if (look.There && match)
+                {
+                    look.Scan = SourceScanner.Scan(folder, listed, registeredNames);
+                }
+
+                return look;
+            }).ContinueWith(t =>
             {
                 if (IsDisposed || !IsHandleCreated)
                 {
@@ -1495,7 +1552,13 @@ namespace PluginStepCodegen
                             return;
                         }
 
-                        _scan = t.IsFaulted ? null : t.Result;
+                        // The only thing above that can throw is the scan, and the scan only runs
+                        // once the folder has answered - so a fault is a folder that is there and
+                        // could not be read, and the probe still stands.
+                        _folderProbed = folder;
+                        _folderThere = t.IsFaulted || t.Result.There;
+                        _scan = t.IsFaulted ? null : t.Result.Scan;
+
                         RenderScan();
                         if (t.IsFaulted)
                         {
@@ -1773,8 +1836,10 @@ namespace PluginStepCodegen
             if (scan == null)
             {
                 var folder = _txtFolder.Text.Trim();
+                var probed = string.Equals(_folderProbed, folder, StringComparison.OrdinalIgnoreCase);
                 return folder.Length == 0 ? "Choose the folder your plugin source is in." :
-                    !Directory.Exists(folder) ? "No folder at that path." :
+                    !probed ? "Looking for that folder..." :
+                    !_folderThere ? "No folder at that path." :
                     _typesByAssembly.Count == 0 ? "Load the assemblies to match against." :
                     string.Empty;
             }
@@ -1968,8 +2033,7 @@ namespace PluginStepCodegen
             // Held down for the duration, because the button is otherwise live throughout its own
             // write: two writers over the same files, and a backup name only accurate to the
             // second, so the two .bak copies collide and the pristine original is the one lost.
-            _writing = true;
-            UpdateButtonState();
+            Busy("Writing " + types.Count + (types.Count == 1 ? " class..." : " classes..."));
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -1983,11 +2047,14 @@ namespace PluginStepCodegen
                         return;
                     }
 
-                    _writing = false;
-                    UpdateButtonState();
+                    Idle();
 
                     if (args.Error != null)
                     {
+                        // Whatever the folder was when the marks were drawn, it is in doubt now:
+                        // the usual reason a write throws outright rather than reporting per
+                        // class is that the folder itself has gone or turned into something else.
+                        StartScan();
                         MessageBox.Show(args.Error.Message, "Write failed",
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
@@ -2013,42 +2080,102 @@ namespace PluginStepCodegen
             });
         }
 
+        /// <summary>
+        /// The one write that was still on the UI thread. Both halves of it - asking whether the
+        /// file is there and putting it there - are questions for whatever the source folder
+        /// lives on, and that is as likely to be a share as a disk. Two steps rather than one
+        /// because the prompt in the middle can only be asked here.
+        /// </summary>
         private void BtnCreateDefinitions_Click(object sender, EventArgs e)
         {
-            var folder = _txtFolder.Text.Trim();
-            var target = Path.Combine(folder, AttributeDefinitions.FileName);
+            var target = Path.Combine(_txtFolder.Text.Trim(), AttributeDefinitions.FileName);
 
-            if (File.Exists(target))
+            Busy("Looking for " + AttributeDefinitions.FileName + "...");
+            WorkAsync(new WorkAsyncInfo
             {
-                var overwrite = MessageBox.Show(
-                    AttributeDefinitions.FileName + " already exists in that folder." + Environment.NewLine
-                    + "Overwrite it?",
-                    "File exists", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-                if (overwrite != DialogResult.Yes)
+                Message = "Looking for " + AttributeDefinitions.FileName + "...",
+                Work = (worker, args) => args.Result = File.Exists(target),
+                PostWorkCallBack = args =>
                 {
-                    return;
-                }
-            }
+                    if (IsDisposed)
+                    {
+                        return;
+                    }
 
-            try
+                    Idle();
+
+                    if (args.Error != null)
+                    {
+                        ShowErrorDialog(args.Error);
+                        return;
+                    }
+
+                    if ((bool)args.Result)
+                    {
+                        var overwrite = MessageBox.Show(
+                            AttributeDefinitions.FileName + " already exists in that folder." + Environment.NewLine
+                            + "Overwrite it?",
+                            "File exists", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                        if (overwrite != DialogResult.Yes)
+                        {
+                            return;
+                        }
+                    }
+
+                    WriteDefinitions(target);
+                }
+            });
+        }
+
+        private void WriteDefinitions(string target)
+        {
+            Busy("Writing " + AttributeDefinitions.FileName + "...");
+            WorkAsync(new WorkAsyncInfo
             {
-                File.WriteAllText(target, AttributeDefinitions.Source, new UTF8Encoding(true));
-                CsSyntaxHighlighter.Apply(_txtPreview, AttributeDefinitions.Source);
-                MessageBox.Show(
-                    "Wrote " + target + Environment.NewLine + Environment.NewLine
-                    + "Do not also reference the XrmTools.Meta.Attributes NuGet package in this project. "
-                    + "It generates the same types and you will get duplicate type errors."
-                    + Environment.NewLine + Environment.NewLine
-                    + "These attributes are Xrm Tools' own, and Xrm Tools reads them back to deploy and "
-                    + "register the assembly from your source. Worth a look:"
-                    + Environment.NewLine + "https://github.com/rezanid/xrmtools",
-                    "Attribute definitions created", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                ShowErrorDialog(ex);
-            }
+                Message = "Writing " + AttributeDefinitions.FileName + "...",
+                Work = (worker, args) =>
+                    File.WriteAllText(target, AttributeDefinitions.Source, new UTF8Encoding(true)),
+                PostWorkCallBack = args =>
+                {
+                    if (IsDisposed)
+                    {
+                        return;
+                    }
+
+                    Idle();
+
+                    if (args.Error != null)
+                    {
+                        ShowErrorDialog(args.Error);
+                        return;
+                    }
+
+                    CsSyntaxHighlighter.Apply(_txtPreview, AttributeDefinitions.Source);
+                    MessageBox.Show(
+                        "Wrote " + target + Environment.NewLine + Environment.NewLine
+                        + "Do not also reference the XrmTools.Meta.Attributes NuGet package in this project. "
+                        + "It generates the same types and you will get duplicate type errors."
+                        + Environment.NewLine + Environment.NewLine
+                        + "These attributes are Xrm Tools' own, and Xrm Tools reads them back to deploy and "
+                        + "register the assembly from your source. Worth a look:"
+                        + Environment.NewLine + "https://github.com/rezanid/xrmtools",
+                        "Attribute definitions created", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            });
+        }
+
+        /// <summary>The source folder is ours for the moment, and the hint says what for.</summary>
+        private void Busy(string what)
+        {
+            _folderBusy = what;
+            UpdateButtonState();
+        }
+
+        private void Idle()
+        {
+            _folderBusy = null;
+            UpdateButtonState();
         }
     }
 }

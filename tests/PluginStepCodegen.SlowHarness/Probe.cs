@@ -50,6 +50,14 @@ namespace PluginStepCodegen.SlowHarness
         public CheckBox AllAssemblies { get { return Field<CheckBox>("_chkAllAssemblies"); } }
         public TextBox Folder { get { return Field<TextBox>("_txtFolder"); } }
 
+        /// <summary>
+        /// What the tool thinks it is doing to the source folder, or null when it is idle. Read
+        /// directly rather than inferred from the buttons: "a failure released the tool" has to
+        /// be checkable without also depending on the folder still being there, which after some
+        /// failures it is not.
+        /// </summary>
+        public string Busy { get { return Field<string>("_folderBusy"); } }
+
         public string Status { get { return Field<Label>("_lblStatus").Text; } }
         public string ScanStatus { get { return Field<Label>("_lblScanStatus").Text; } }
         public string WriteHint { get { return Field<Label>("_lblWriteHint").Text; } }

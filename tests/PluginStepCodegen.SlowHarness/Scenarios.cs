@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using PluginStepCodegen.Harness;
@@ -49,6 +50,8 @@ namespace PluginStepCodegen.SlowHarness
                 LoadTwice(),
                 Cancel(),
                 ErrorUnderLatency(),
+                LoadFails(),
+                WriteFails(),
             };
         }
 
@@ -368,6 +371,95 @@ namespace PluginStepCodegen.SlowHarness
                     r.Check(r.Probe.Fetched.ContainsKey(r.Probe.IdOf(Contoso)),
                         "and the retry should land");
                 });
+        }
+
+        /// <summary>
+        /// The other half of error-under-latency, and the one with teeth: the *assembly* fetch
+        /// failing rather than the step fetch.
+        ///
+        /// Load and Refresh are both held down for the duration of a load, so the flag that
+        /// holds them down has to come back up on the way out of a failure as surely as on the
+        /// way out of a success. If it does not, both buttons are dead for the rest of the
+        /// session and the only way on is closing the tab - a tool bricked by one timeout.
+        /// </summary>
+        private static Scenario LoadFails()
+        {
+            return new Scenario
+            {
+                Name = "load-fails",
+                Why = "a load that fails must give the tool back, not brick it",
+                Wire = s =>
+                {
+                    s.Latency = Slow("pluginassembly", 1500, 200);
+                    s.Fails = call => call.Entity == "pluginassembly" && call.Nth == 1
+                        ? new TimeoutException("The request channel timed out while waiting for a reply.")
+                        : null;
+                }
+            }
+                .At(0, "point at the folder", r => r.Probe.TypeFolder(r.Folder))
+                .At(200, "press Load", r => r.Probe.PressLoad())
+                .At(3000, "the tool is still a tool", r =>
+                {
+                    r.Check(r.Probe.Load.Enabled, "Load must come back, or there is no way on from here");
+                    r.Check(r.Probe.Status.IndexOf("could not", StringComparison.OrdinalIgnoreCase) >= 0,
+                        "and the status line should say why the list is empty: \"" + r.Probe.Status + "\"");
+                })
+                .At(3200, "press Load again", r => r.Probe.PressLoad())
+                .At(5000, "and this time it lands", r =>
+                {
+                    r.Check(r.Probe.Assemblies.Items.Count > 0, "the second load should fill the list");
+                    r.Check(r.Probe.Refresh.Enabled, "and Refresh should be live behind it");
+                    r.Check(r.Probe.Status.IndexOf("could not", StringComparison.OrdinalIgnoreCase) < 0,
+                        "with the failure gone from the status line");
+                });
+        }
+
+        /// <summary>
+        /// A write that throws outright rather than reporting per-class failures. The folder is
+        /// taken away underneath it, which is what actually happens: a share drops, a sync client
+        /// moves something, and the path the marks were drawn against is no longer a folder.
+        ///
+        /// The same shape as load-fails and the same stakes: Write is held down for the duration
+        /// of its own write, so a failure that did not release it would be a Write button dead
+        /// for the rest of the session.
+        /// </summary>
+        private static Scenario WriteFails()
+        {
+            return new Scenario
+            {
+                Name = "write-fails",
+                Why = "a write that throws must give the tool back, and say the folder is gone",
+                Wire = s => s.Latency = Slow("plugintype", 300)
+            }
+                .At(0, "point at the folder", r => r.Probe.TypeFolder(r.Folder))
+                .At(200, "press Load", r => r.Probe.PressLoad())
+                .At(800, "tick Contoso.Plugins", r => r.Probe.Tick(Contoso))
+                .At(2500, "everything has landed", r =>
+                    r.Check(r.Probe.Write.Enabled, "Write should be live"))
+                .At(2700, "the folder stops being a folder", r =>
+                {
+                    // Not merely deleted: the walk steps over a missing directory by design, and
+                    // would report every class as "no file" rather than throwing. A file where
+                    // the folder was is what the enumeration cannot make sense of at all.
+                    Directory.Delete(r.Folder, true);
+                    File.WriteAllText(r.Folder, "not a folder any more");
+                })
+                .At(2900, "press Write", r =>
+                {
+                    r.Probe.PressWrite();
+                    r.Check(r.Probe.Busy != null, "the write should have taken the folder");
+                })
+                .At(5000, "the tool comes back", r =>
+                {
+                    r.Check(r.Probe.Busy == null,
+                        "a failed write must release the folder, and it still says \"" + r.Probe.Busy + "\"");
+                    r.Check(r.Dialogs.Any(d => d.IndexOf("fail", StringComparison.OrdinalIgnoreCase) >= 0),
+                        "and should have said so: " + string.Join(" | ", r.Dialogs));
+                })
+                .At(6500, "and notices what happened to the folder", r =>
+                    r.Check(r.Probe.WriteHint.IndexOf("No folder", StringComparison.OrdinalIgnoreCase) >= 0,
+                        "the rescan should find the folder gone, and the hint says \""
+                        + r.Probe.WriteHint + "\""));
         }
     }
 }

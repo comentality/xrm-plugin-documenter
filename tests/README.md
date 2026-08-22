@@ -347,8 +347,15 @@ checked.
 | `load-twice` | Three presses of Load, one query. |
 | `cancel` | The panel's Cancel stops the round trips that had not happened yet, records nothing, and leaves the assembly askable again. |
 | `error-under-latency` | A timeout is readable after the dialog is gone, and is not remembered as an answer. |
+| `load-fails` | A load that times out gives Load and Refresh back. The flag that holds them down for the duration has to come up on the failure path too, or one timeout bricks the tab. |
+| `write-fails` | A write that throws — the source folder taken away underneath it — releases the folder and notices it is gone. |
 
-All eight failed against the code that prompted them, which is why they exist. The exit code
+The first eight failed against the code that prompted them, which is why they exist. The last
+two never did: they pin two paths where a flag not cleared means a button dead for the rest of
+the session, which is the kind of thing that is correct until somebody edits near it. Both were
+checked by breaking them on purpose and watching the scenario go red — worth doing to any
+scenario written against code that already passes, because one that cannot fail is worse than
+one that is not there. The exit code
 is the number of scenarios with findings, and `report.txt` beside the shots holds the same
 lines the console printed.
 
